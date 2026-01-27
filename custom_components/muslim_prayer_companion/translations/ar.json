@@ -1,0 +1,132 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "إعداد رفيق الصلاة الإسلامية",
+                "description": "اختر كيفية الحصول على مواقيت الصلاة لموقعك.",
+                "data": {
+                    "source_type": "مصدر مواقيت الصلاة"
+                }
+            },
+            "ireland": {
+                "title": "اختر مسجد أيرلندا",
+                "description": "اختر مسجداً في أيرلندا للحصول على مواقيت الصلاة.",
+                "data": {
+                    "calculation_method": "المسجد",
+                    "location_name": "اسم الموقع"
+                }
+            },
+            "location": {
+                "title": "إعداد الموقع",
+                "description": "قم بإعداد الموقع لحساب مواقيت الصلاة.",
+                "data": {
+                    "use_ha_location": "استخدام موقع Home Assistant",
+                    "latitude": "خط العرض",
+                    "longitude": "خط الطول",
+                    "location_name": "اسم الموقع"
+                }
+            },
+            "method": {
+                "title": "طريقة الحساب",
+                "description": "اختر طريقة حساب مواقيت الصلاة.",
+                "data": {
+                    "calculation_method": "طريقة الحساب"
+                }
+            }
+        },
+        "error": {
+            "invalid_location": "إحداثيات الموقع غير صالحة",
+            "cannot_connect": "لا يمكن الاتصال بواجهة مواقيت الصلاة"
+        },
+        "abort": {
+            "already_configured": "هذا الموقع مُعد بالفعل"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "إعداد رفيق الصلاة الإسلامية",
+                "description": "اضبط إعدادات مواقيت الصلاة.",
+                "data": {
+                    "calculation_method": "طريقة حساب الصلاة",
+                    "iqamah_method": "طريقة وقت الإقامة",
+                    "enable_hijri": "تفعيل حساسات التاريخ الهجري",
+                    "enable_countdown": "تفعيل حساسات العد التنازلي"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "fajr": {
+                "name": "صلاة الفجر"
+            },
+            "sunrise": {
+                "name": "وقت الشروق"
+            },
+            "dhuhr": {
+                "name": "صلاة الظهر"
+            },
+            "asr": {
+                "name": "صلاة العصر"
+            },
+            "maghrib": {
+                "name": "صلاة المغرب"
+            },
+            "isha": {
+                "name": "صلاة العشاء"
+            },
+            "midnight": {
+                "name": "منتصف الليل"
+            },
+            "next_prayer": {
+                "name": "الصلاة القادمة"
+            },
+            "next_prayer_countdown": {
+                "name": "العد التنازلي للصلاة القادمة"
+            },
+            "next_prayer_minutes": {
+                "name": "دقائق حتى الصلاة القادمة"
+            },
+            "juma_time": {
+                "name": "وقت صلاة الجمعة"
+            },
+            "current_prayer_period": {
+                "name": "فترة الصلاة الحالية"
+            },
+            "qibla_direction": {
+                "name": "اتجاه القبلة"
+            },
+            "hijri_date": {
+                "name": "التاريخ الهجري"
+            },
+            "hijri_date_readable": {
+                "name": "التاريخ الهجري المقروء"
+            },
+            "is_ramadan": {
+                "name": "هل هو رمضان"
+            },
+            "is_friday": {
+                "name": "هل هو الجمعة"
+            },
+            "special_night": {
+                "name": "ليلة خاصة"
+            }
+        }
+    },
+    "selector": {
+        "source_type": {
+            "options": {
+                "calculated": "حساب من الإحداثيات",
+                "ireland": "واجهة مسجد أيرلندا"
+            }
+        },
+        "iqamah_method": {
+            "options": {
+                "offset": "استخدام فروقات الوقت",
+                "disabled": "معطل"
+            }
+        }
+    },
+    "title": "رفيق الصلاة الإسلامية"
+}
