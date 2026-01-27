@@ -1,23 +1,132 @@
 {
     "config": {
-        "abort": {
-            "single_instance_allowed": "Already configured. Only a single configuration possible."
-        },
         "step": {
             "user": {
-                "description": "Do you want to set up Muslim Prayer Companion?",
-                "title": "Set up Muslim Prayer Companion"
+                "title": "Set up Muslim Prayer Companion",
+                "description": "Choose how to get prayer times for your location.",
+                "data": {
+                    "source_type": "Prayer times source"
+                }
+            },
+            "ireland": {
+                "title": "Select Ireland Mosque",
+                "description": "Select an Ireland mosque to get prayer times from.",
+                "data": {
+                    "calculation_method": "Mosque",
+                    "location_name": "Location name"
+                }
+            },
+            "location": {
+                "title": "Location Configuration",
+                "description": "Configure the location for prayer time calculations.",
+                "data": {
+                    "use_ha_location": "Use Home Assistant location",
+                    "latitude": "Latitude",
+                    "longitude": "Longitude",
+                    "location_name": "Location name"
+                }
+            },
+            "method": {
+                "title": "Calculation Method",
+                "description": "Select the prayer time calculation method.",
+                "data": {
+                    "calculation_method": "Calculation method"
+                }
             }
+        },
+        "error": {
+            "invalid_location": "Invalid location coordinates",
+            "cannot_connect": "Cannot connect to prayer times API"
+        },
+        "abort": {
+            "already_configured": "This location is already configured"
         }
     },
     "options": {
         "step": {
             "init": {
+                "title": "Configure Muslim Prayer Companion",
+                "description": "Adjust your prayer time settings.",
                 "data": {
-                    "calculation_method": "Prayer calculation method"
+                    "calculation_method": "Prayer calculation method",
+                    "iqamah_method": "Iqamah time method",
+                    "enable_hijri": "Enable Hijri date sensors",
+                    "enable_countdown": "Enable countdown sensors"
                 }
             }
         }
     },
-    "title": "Musilim Prayer Companion"
+    "entity": {
+        "sensor": {
+            "fajr": {
+                "name": "Fajr Prayer"
+            },
+            "sunrise": {
+                "name": "Sunrise Time"
+            },
+            "dhuhr": {
+                "name": "Dhuhr Prayer"
+            },
+            "asr": {
+                "name": "Asr Prayer"
+            },
+            "maghrib": {
+                "name": "Maghrib Prayer"
+            },
+            "isha": {
+                "name": "Isha Prayer"
+            },
+            "midnight": {
+                "name": "Midnight Time"
+            },
+            "next_prayer": {
+                "name": "Next Prayer"
+            },
+            "next_prayer_countdown": {
+                "name": "Next Prayer Countdown"
+            },
+            "next_prayer_minutes": {
+                "name": "Next Prayer Minutes"
+            },
+            "juma_time": {
+                "name": "Jumu'a Time"
+            },
+            "current_prayer_period": {
+                "name": "Current Prayer Period"
+            },
+            "qibla_direction": {
+                "name": "Qibla Direction"
+            },
+            "hijri_date": {
+                "name": "Hijri Date"
+            },
+            "hijri_date_readable": {
+                "name": "Hijri Date Readable"
+            },
+            "is_ramadan": {
+                "name": "Is Ramadan"
+            },
+            "is_friday": {
+                "name": "Is Friday"
+            },
+            "special_night": {
+                "name": "Special Night"
+            }
+        }
+    },
+    "selector": {
+        "source_type": {
+            "options": {
+                "calculated": "Calculate from coordinates",
+                "ireland": "Ireland Mosque API"
+            }
+        },
+        "iqamah_method": {
+            "options": {
+                "offset": "Use time offsets",
+                "disabled": "Disabled"
+            }
+        }
+    },
+    "title": "Muslim Prayer Companion"
 }
