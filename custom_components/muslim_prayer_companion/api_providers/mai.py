@@ -39,13 +39,10 @@ MAI_LABELS = ("fajr", "shurooq", "dhuhr", "asr", "maghrib", "isha")
 
 _CELL_SPLIT_RE = re.compile(r"class=['\"]prayer-cell['\"]", re.IGNORECASE)
 _LABEL_RE = re.compile(r"prayer-label\s+(?P<label>[a-z]+)", re.IGNORECASE)
-_HOUR_RE = re.compile(
-    r"prayer-(?:passed|pending)-hour['\"]\s*>\s*(?P<value>\d{1,2})\s*<", re.IGNORECASE
-)
-_MINUTE_RE = re.compile(
-    r"prayer-(?:passed|pending)-minute['\"]\s*>\s*(?P<value>\d{1,2})\s*<",
-    re.IGNORECASE,
-)
+# The state word changes with the time of day: "passed", "pending" (the next
+# prayer) and, after Isha, "remaining" for the prayers already behind.
+_HOUR_RE = re.compile(r"prayer-[a-z]+-hour['\"]\s*>\s*(?P<value>\d{1,2})\s*<", re.IGNORECASE)
+_MINUTE_RE = re.compile(r"prayer-[a-z]+-minute['\"]\s*>\s*(?P<value>\d{1,2})\s*<", re.IGNORECASE)
 _DATE_RE = re.compile(
     r"class=['\"]date['\"]\s*>\s*(?:[A-Za-z]{3,9},?\s*)?"
     r"(?P<day>\d{1,2})(?:st|nd|rd|th)?\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})",

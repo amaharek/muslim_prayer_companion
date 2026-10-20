@@ -120,3 +120,12 @@ def test_build_result_without_date_is_accepted() -> None:
     """When the page has no readable date, the requested date is trusted."""
     result = build_mai_result(MaiDay(day=None, times=EXPECTED), date(2026, 10, 21), DUBLIN)
     assert result.today.fajr.astimezone(DUBLIN).date() == date(2026, 10, 21)
+
+
+def test_evening_page_with_remaining_state() -> None:
+    """After Isha the page marks past prayers "remaining" and tomorrow's Fajr "pending"."""
+    html = load_fixture("mai_home_evening.html")
+    assert "prayer-remaining-hour" in html
+    parsed = parse_mai_homepage(html)
+    assert parsed.day == date(2026, 10, 20)
+    assert parsed.times == EXPECTED
