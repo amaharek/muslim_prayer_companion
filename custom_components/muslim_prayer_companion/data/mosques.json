@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "mosques": [
+    {
+      "key": "ie-icci",
+      "name": "Islamic Cultural Centre of Ireland",
+      "short_name": "ICCI",
+      "address": "19 Roebuck Road, Clonskeagh",
+      "city": "Dublin 14",
+      "country": "Ireland",
+      "latitude": 53.2663,
+      "longitude": -6.2135,
+      "timezone": "Europe/Dublin",
+      "website": "https://islamireland.ie",
+      "source": { "type": "icci_timetable" },
+      "source_id": "icci-timetable",
+      "jumuah": "manual",
+      "credit": "Perpetual timetable published by the Islamic Cultural Centre of Ireland, bundled from the Wayback Machine snapshot of 2 August 2022."
+    },
+    {
+      "key": "ie-mcnd",
+      "name": "Muslim Community North Dublin",
+      "short_name": "MCND",
+      "address": "Rolestown",
+      "city": "Dublin",
+      "country": "Ireland",
+      "latitude": 53.4023,
+      "longitude": -6.1756,
+      "timezone": "Europe/Dublin",
+      "website": "https://mcnd.ie",
+      "source": {
+        "type": "dpt",
+        "url": "https://mcnd.ie/wp-json/dpt/v1/prayertime?filter=today"
+      },
+      "source_id": "mcnd-api",
+      "jumuah": "auto",
+      "credit": "Daily Prayer Time WordPress plugin API published by Muslim Community North Dublin."
+    },
+    {
+      "key": "ie-hicc",
+      "name": "Hansfield Islamic Cultural Centre",
+      "short_name": "HICC",
+      "address": "Hansfield",
+      "city": "Dublin 15",
+      "country": "Ireland",
+      "latitude": 53.394,
+      "longitude": -6.4258,
+      "timezone": "Europe/Dublin",
+      "website": "https://hicc.ie",
+      "source": {
+        "type": "dpt",
+        "url": "https://hicc.ie/wp-json/dpt/v1/prayertime?filter=today"
+      },
+      "source_id": "hicc-api",
+      "jumuah": "auto",
+      "credit": "Daily Prayer Time WordPress plugin API published by Hansfield Islamic Cultural Centre."
+    },
+    {
+      "key": "ie-sdic",
+      "name": "South Dublin Islamic Centre",
+      "short_name": "SDIC",
+      "address": "Tallaght",
+      "city": "Dublin 24",
+      "country": "Ireland",
+      "latitude": 53.287,
+      "longitude": -6.3722,
+      "timezone": "Europe/Dublin",
+      "website": "https://sdic.ie",
+      "source": {
+        "type": "dpt",
+        "url": "https://sdic.ie/wp-json/dpt/v1/prayertime?filter=today"
+      },
+      "source_id": "sdic-api",
+      "jumuah": "auto",
+      "credit": "Daily Prayer Time WordPress plugin API published by South Dublin Islamic Centre."
+    },
+    {
+      "key": "ie-mai",
+      "name": "Muslim Association of Ireland (Tallaght)",
+      "short_name": "MAI",
+      "address": "Unit 1, Greenhills Business Centre, Greenhills Road, Tallaght",
+      "city": "Dublin 24",
+      "country": "Ireland",
+      "latitude": 53.2905,
+      "longitude": -6.369,
+      "timezone": "Europe/Dublin",
+      "website": "https://maionline.ie",
+      "source": { "type": "mai_html", "url": "https://maionline.ie/" },
+      "source_id": "mai-website",
+      "jumuah": "manual",
+      "credit": "Daily prayer times read from the public website of the Muslim Association of Ireland."
+    }
+  ]
+}

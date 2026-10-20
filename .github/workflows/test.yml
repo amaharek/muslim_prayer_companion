@@ -1,42 +1,65 @@
 name: Test
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - "**.py"
+    branches: [main, dev, "release/**"]
   pull_request:
-    paths:
-      - "**.py"
-      - "poetry.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  tests:
-    runs-on: "ubuntu-latest"
-    name: Run tests
+  pytest:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "pytest (Home Assistant 2025.2.4, the hacs.json minimum)"
+            pin: "pytest-homeassistant-custom-component==0.13.214"
+          - name: "pytest (latest Home Assistant)"
+            pin: ""
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - uses: ./.github/workflows/poetry-composite-action
-      - name: Prepare test env
-        run: bash tests/setup-test.sh
-      - name: Install poetry
-        run: poetry install
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -e ".[dev]" ${{ matrix.pin }}
       - name: Run tests
-        run: |
-          poetry run pytest \
-            -qq \
-            --timeout=9 \
-            --durations=10 \
-            -n auto \
-            --cov custom_components.muslim_prayer_companion \
-            --cov-report xml \
-            -o console_output_style=count \
-            -p no:sugar \
-            tests
-          poetry run coverage lcov
-      - name: Upload Coverage Results
+        run: pytest -q --cov --cov-report=xml --cov-report=term-missing
+      - name: Check the bundled ICCI timetable
+        run: python -I scripts/build_icci_timetable.py --check
+      - name: Check the mosque registry (offline)
+        run: python scripts/check_mosques.py --offline
+      - name: Upload coverage
+        if: matrix.pin == ''
         uses: coverallsapp/github-action@v2
         with:
-          github-token: ${{ secrets.github_token }}
-          path-to-lcov: coverage.lcov
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage.xml
+
+  lint:
+    name: ruff and pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install tools
+        run: pip install ruff==0.17.1 pre-commit
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure

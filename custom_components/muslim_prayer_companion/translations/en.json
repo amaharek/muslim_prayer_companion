@@ -1,23 +1,342 @@
 {
-    "config": {
-        "abort": {
-            "single_instance_allowed": "Already configured. Only a single configuration possible."
+  "title": "Muslim Prayer Companion",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Muslim Prayer Companion",
+        "description": "Choose where your prayer times come from. You can add the integration more than once, for example one entry per mosque or location.",
+        "data": {
+          "source_type": "Prayer times source"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure {location}",
+        "description": "Change the source, mosque, location or calculation method. Your other settings are kept.",
+        "data": {
+          "source_type": "Prayer times source"
+        }
+      },
+      "ireland": {
+        "title": "Select a mosque",
+        "description": "Nearest to your Home Assistant location: {nearest}.",
+        "data": {
+          "mosque": "Mosque",
+          "location_name": "Name"
         },
-        "step": {
-            "user": {
-                "description": "Do you want to set up Muslim Prayer Companion?",
-                "title": "Set up Muslim Prayer Companion"
-            }
+        "data_description": {
+          "location_name": "Shown in entity names. Leave empty to use the mosque's short name."
         }
-    },
-    "options": {
-        "step": {
-            "init": {
-                "data": {
-                    "calculation_method": "Prayer calculation method"
-                }
-            }
+      },
+      "location": {
+        "title": "Location",
+        "description": "Prayer times are calculated for this location.",
+        "data": {
+          "location": "Location",
+          "location_name": "Name"
+        },
+        "data_description": {
+          "location_name": "Shown in entity names, for example Home or Office."
         }
+      },
+      "method": {
+        "title": "Calculation method",
+        "description": "Select the convention used to calculate Fajr and Isha.",
+        "data": {
+          "calculation_method": "Calculation method"
+        }
+      }
     },
-    "title": "Musilim Prayer Companion"
+    "abort": {
+      "already_configured": "This mosque or location is already configured",
+      "reconfigure_successful": "Reconfiguration complete"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "{location}",
+        "description": "Prayer times for {location} come from {source}. To change the mosque, location or source, use Reconfigure in the entry's menu.",
+        "menu_options": {
+          "method": "Calculation method",
+          "iqamah": "Iqamah times",
+          "friday": "Friday prayers",
+          "hijri": "Hijri date and Imsak",
+          "display": "Sensors and display"
+        }
+      },
+      "method": {
+        "title": "Calculation method",
+        "data": {
+          "calculation_method": "Calculation method"
+        }
+      },
+      "iqamah": {
+        "title": "Iqamah times",
+        "description": "How the congregation (iqamah) times are obtained. Offsets are used as a fallback whenever a published time is missing.",
+        "data": {
+          "iqamah_method": "Iqamah times from",
+          "iqamah_api_url": "Custom iqamah API URL"
+        },
+        "data_description": {
+          "iqamah_api_url": "Only used with the custom API method. The URL must return JSON with the five prayers, for example {\"Fajr\": \"06:30\", \"Dhuhr\": \"13:30\", ...}."
+        },
+        "sections": {
+          "offsets": {
+            "name": "Offsets after the start of each prayer",
+            "description": "Minutes between the start of the prayer and the iqamah.",
+            "data": {
+              "Fajr": "Fajr",
+              "Dhuhr": "Dhuhr",
+              "Asr": "Asr",
+              "Maghrib": "Maghrib",
+              "Isha": "Isha"
+            }
+          }
+        }
+      },
+      "hijri": {
+        "title": "Hijri date and Imsak",
+        "data": {
+          "hijri_adjustment": "Hijri date adjustment",
+          "hijri_change_at_maghrib": "Hijri day changes at Maghrib",
+          "imsak_minutes": "Imsak before Fajr"
+        },
+        "data_description": {
+          "hijri_adjustment": "Shift the Hijri date by up to two days to follow your local moon sighting announcements.",
+          "hijri_change_at_maghrib": "When on, the Hijri date (and Ramadan, special nights) advances at Maghrib instead of at midnight.",
+          "imsak_minutes": "Minutes before Fajr at which the Imsak sensor is set."
+        }
+      },
+      "display": {
+        "title": "Sensors and display",
+        "data": {
+          "enabled_groups": "Sensor groups",
+          "countdown_format": "Countdown format",
+          "prayer_window_minutes": "Prayer window"
+        },
+        "data_description": {
+          "enabled_groups": "Prayer-time sensors are always created. Disabled groups are removed on save.",
+          "prayer_window_minutes": "For this many minutes after a prayer starts, the current prayer period shows the prayer itself instead of \"Between ...\"."
+        }
+      },
+      "friday": {
+        "title": "Friday prayers",
+        "description": "Track the Jumu'ah times of one or more mosques. Configured: {mosques}.",
+        "menu_options": {
+          "friday_add": "Add a mosque",
+          "friday_select": "Edit a mosque",
+          "friday_remove": "Remove mosques",
+          "init": "Back"
+        }
+      },
+      "friday_add": {
+        "title": "Add a mosque",
+        "description": "Choose a mosque that publishes its Jumu'ah times, or enter the times yourself. Entered times are also used as a fallback when nothing is published.",
+        "data": {
+          "name": "Mosque name",
+          "source": "Jumu'ah times from",
+          "jumuah_1": "First Jumu'ah (HH:MM)",
+          "jumuah_2": "Second Jumu'ah (HH:MM)",
+          "label_1": "First Jumu'ah label",
+          "label_2": "Second Jumu'ah label"
+        },
+        "data_description": {
+          "name": "Leave empty to use the selected mosque's name.",
+          "label_1": "Optional, for example \"Men only\" or \"Arabic khutbah\"."
+        }
+      },
+      "friday_select": {
+        "title": "Edit a mosque",
+        "data": {
+          "slug": "Mosque"
+        }
+      },
+      "friday_edit": {
+        "title": "Edit {mosque}",
+        "data": {
+          "name": "Mosque name",
+          "source": "Jumu'ah times from",
+          "jumuah_1": "First Jumu'ah (HH:MM)",
+          "jumuah_2": "Second Jumu'ah (HH:MM)",
+          "label_1": "First Jumu'ah label",
+          "label_2": "Second Jumu'ah label"
+        }
+      },
+      "friday_remove": {
+        "title": "Remove mosques",
+        "description": "The selected mosques and their sensors are removed.",
+        "data": {
+          "slugs": "Mosques"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Enter a mosque name",
+      "name_exists": "A mosque with this name is already in the list",
+      "invalid_time": "Enter a time as HH:MM, for example 13:30",
+      "time_required": "Enter at least the first Jumu'ah time",
+      "jumuah_order": "The second Jumu'ah must be after the first",
+      "too_many_mosques": "You can track at most 10 mosques",
+      "label_too_long": "Labels can be at most 40 characters",
+      "unknown_source": "Unknown mosque",
+      "invalid_url": "Enter a valid http(s) URL",
+      "url_required": "The custom API method needs a URL"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "fajr": { "name": "Fajr" },
+      "sunrise": { "name": "Sunrise" },
+      "dhuhr": { "name": "Dhuhr" },
+      "asr": { "name": "Asr" },
+      "maghrib": { "name": "Maghrib" },
+      "isha": { "name": "Isha" },
+      "midnight": { "name": "Midnight" },
+      "next_prayer": { "name": "Next prayer" },
+      "current_prayer_period": { "name": "Current prayer period" },
+      "location_name": { "name": "Location" },
+      "next_prayer_countdown": { "name": "Next prayer countdown" },
+      "next_prayer_minutes": { "name": "Minutes to next prayer" },
+      "hijri_date": { "name": "Hijri date" },
+      "hijri_day": { "name": "Hijri day" },
+      "hijri_month_number": { "name": "Hijri month number" },
+      "hijri_month": { "name": "Hijri month" },
+      "hijri_year": { "name": "Hijri year" },
+      "hijri_date_readable": { "name": "Hijri date (readable)" },
+      "hijri_day_month": { "name": "Hijri day and month" },
+      "iqamah_fajr": { "name": "Iqamah Fajr" },
+      "iqamah_dhuhr": { "name": "Iqamah Dhuhr" },
+      "iqamah_asr": { "name": "Iqamah Asr" },
+      "iqamah_maghrib": { "name": "Iqamah Maghrib" },
+      "iqamah_isha": { "name": "Iqamah Isha" },
+      "qibla_direction": { "name": "Qibla direction" },
+      "is_ramadan": { "name": "Ramadan" },
+      "is_friday": { "name": "Friday" },
+      "special_night": { "name": "Special night" },
+      "ramadan_day": { "name": "Ramadan day" },
+      "days_until_ramadan": { "name": "Days until Ramadan" },
+      "upcoming_islamic_event": { "name": "Upcoming Islamic event" },
+      "imsak": { "name": "Imsak" },
+      "iftar": { "name": "Iftar" },
+      "juma_time": { "name": "Jumu'ah" },
+      "friday_jumuah_1": { "name": "Jumu'ah 1" },
+      "friday_jumuah_2": { "name": "Jumu'ah 2" }
+    }
+  },
+  "selector": {
+    "source_type": {
+      "options": {
+        "calculated": "Calculate from a location",
+        "ireland": "An Irish mosque's published timetable"
+      }
+    },
+    "ireland_mosque": {
+      "options": {
+        "ie-icci": "Islamic Cultural Centre of Ireland (ICCI), Clonskeagh",
+        "ie-mcnd": "Muslim Community North Dublin (MCND)",
+        "ie-hicc": "Hansfield Islamic Cultural Centre (HICC)",
+        "ie-sdic": "South Dublin Islamic Centre (SDIC)",
+        "ie-mai": "Muslim Association of Ireland (MAI), Tallaght"
+      }
+    },
+    "friday_source": {
+      "options": {
+        "manual": "Entered manually",
+        "ie-icci": "Islamic Cultural Centre of Ireland (ICCI) - manual times",
+        "ie-mcnd": "Muslim Community North Dublin (MCND)",
+        "ie-hicc": "Hansfield Islamic Cultural Centre (HICC)",
+        "ie-sdic": "South Dublin Islamic Centre (SDIC)",
+        "ie-mai": "Muslim Association of Ireland (MAI), Tallaght - manual times"
+      }
+    },
+    "calculation_method": {
+      "options": {
+        "jafari": "Shia Ithna-Ashari (Jafari)",
+        "karachi": "University of Islamic Sciences, Karachi",
+        "isna": "Islamic Society of North America (ISNA)",
+        "mwl": "Muslim World League (MWL)",
+        "makkah": "Umm al-Qura University, Makkah",
+        "egypt": "Egyptian General Authority of Survey",
+        "tehran": "Institute of Geophysics, University of Tehran",
+        "gulf": "Gulf Region",
+        "kuwait": "Kuwait",
+        "qatar": "Qatar",
+        "singapore": "Majlis Ugama Islam Singapura",
+        "france": "Union des Organisations Islamiques de France",
+        "turkey": "Diyanet İşleri Başkanlığı, Turkey",
+        "russia": "Spiritual Administration of Muslims of Russia",
+        "moonsighting": "Moonsighting Committee Worldwide",
+        "dubai": "Dubai",
+        "jakim": "JAKIM, Malaysia",
+        "tunisia": "Tunisia",
+        "algeria": "Algeria",
+        "kemenag": "Kementerian Agama, Indonesia",
+        "morocco": "Morocco",
+        "portugal": "Comunidade Islâmica de Lisboa, Portugal",
+        "jordan": "Jordan"
+      }
+    },
+    "iqamah_method": {
+      "options": {
+        "offset": "Fixed offsets after each prayer",
+        "mosque": "Published by the mosque",
+        "api": "Custom JSON API",
+        "disabled": "Disabled"
+      }
+    },
+    "countdown_format": {
+      "options": {
+        "sentence": "Sentence (Asr in 45 minutes)",
+        "clock": "Clock (00:45)",
+        "short": "Minutes only (45)"
+      }
+    },
+    "sensor_groups": {
+      "options": {
+        "iqamah": "Iqamah times",
+        "hijri": "Hijri date",
+        "countdown": "Countdown",
+        "qibla": "Qibla direction",
+        "special_dates": "Ramadan, Imsak, Iftar and special dates",
+        "friday": "Friday prayers"
+      }
+    }
+  },
+  "issues": {
+    "provider_fallback": {
+      "title": "{location}: prayer times are calculated, not from {mosque}",
+      "description": "The prayer times of {mosque} could not be read ({url}): {error}\n\nUntil the source works again, {location} shows times from the {fallback} for its coordinates. The `source` attribute of the prayer-time sensors shows which is in use. This issue closes itself when the source recovers."
+    }
+  },
+  "exceptions": {
+    "date_not_available": {
+      "message": "{source} only publishes today's and tomorrow's prayer times; {date} is not available."
+    },
+    "entry_not_found": {
+      "message": "No Muslim Prayer Companion entry with id {entry_id} is loaded."
+    },
+    "no_entries": {
+      "message": "No Muslim Prayer Companion entry is set up."
+    }
+  },
+  "services": {
+    "get_prayer_times": {
+      "name": "Get prayer times",
+      "description": "Returns the prayer times of one or more days for a configured location or mosque.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entry",
+          "description": "The location or mosque to use. Defaults to the first configured entry."
+        },
+        "date": {
+          "name": "Start date",
+          "description": "First day to return. Defaults to today."
+        },
+        "days": {
+          "name": "Days",
+          "description": "Number of consecutive days to return (1 to 366). Mosque APIs can only return today and tomorrow."
+        }
+      }
+    }
+  }
 }
