@@ -1,132 +1,342 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "إعداد رفيق الصلاة الإسلامية",
-                "description": "اختر كيفية الحصول على مواقيت الصلاة لموقعك.",
-                "data": {
-                    "source_type": "مصدر مواقيت الصلاة"
-                }
-            },
-            "ireland": {
-                "title": "اختر مسجد أيرلندا",
-                "description": "اختر مسجداً في أيرلندا للحصول على مواقيت الصلاة.",
-                "data": {
-                    "calculation_method": "المسجد",
-                    "location_name": "اسم الموقع"
-                }
-            },
-            "location": {
-                "title": "إعداد الموقع",
-                "description": "قم بإعداد الموقع لحساب مواقيت الصلاة.",
-                "data": {
-                    "use_ha_location": "استخدام موقع Home Assistant",
-                    "latitude": "خط العرض",
-                    "longitude": "خط الطول",
-                    "location_name": "اسم الموقع"
-                }
-            },
-            "method": {
-                "title": "طريقة الحساب",
-                "description": "اختر طريقة حساب مواقيت الصلاة.",
-                "data": {
-                    "calculation_method": "طريقة الحساب"
-                }
-            }
+  "title": "رفيق الصلاة",
+  "config": {
+    "step": {
+      "user": {
+        "title": "إعداد رفيق الصلاة",
+        "description": "اختر مصدر مواقيت الصلاة. يمكنك إضافة التكامل أكثر من مرة، مثلاً مدخل لكل مسجد أو موقع.",
+        "data": {
+          "source_type": "مصدر مواقيت الصلاة"
+        }
+      },
+      "reconfigure": {
+        "title": "إعادة إعداد {location}",
+        "description": "غيّر المصدر أو المسجد أو الموقع أو طريقة الحساب. تبقى إعداداتك الأخرى كما هي.",
+        "data": {
+          "source_type": "مصدر مواقيت الصلاة"
+        }
+      },
+      "ireland": {
+        "title": "اختر مسجداً",
+        "description": "الأقرب إلى موقع Home Assistant لديك: {nearest}.",
+        "data": {
+          "mosque": "المسجد",
+          "location_name": "الاسم"
         },
-        "error": {
-            "invalid_location": "إحداثيات الموقع غير صالحة",
-            "cannot_connect": "لا يمكن الاتصال بواجهة مواقيت الصلاة"
+        "data_description": {
+          "location_name": "يظهر في أسماء الكيانات. اتركه فارغاً لاستخدام الاسم المختصر للمسجد."
+        }
+      },
+      "location": {
+        "title": "الموقع",
+        "description": "تُحسب مواقيت الصلاة لهذا الموقع.",
+        "data": {
+          "location": "الموقع",
+          "location_name": "الاسم"
         },
-        "abort": {
-            "already_configured": "هذا الموقع مُعد بالفعل"
+        "data_description": {
+          "location_name": "يظهر في أسماء الكيانات، مثل المنزل أو المكتب."
         }
-    },
-    "options": {
-        "step": {
-            "init": {
-                "title": "إعداد رفيق الصلاة الإسلامية",
-                "description": "اضبط إعدادات مواقيت الصلاة.",
-                "data": {
-                    "calculation_method": "طريقة حساب الصلاة",
-                    "iqamah_method": "طريقة وقت الإقامة",
-                    "enable_hijri": "تفعيل حساسات التاريخ الهجري",
-                    "enable_countdown": "تفعيل حساسات العد التنازلي"
-                }
-            }
+      },
+      "method": {
+        "title": "طريقة الحساب",
+        "description": "اختر الطريقة المستخدمة لحساب الفجر والعشاء.",
+        "data": {
+          "calculation_method": "طريقة الحساب"
         }
+      }
     },
-    "entity": {
-        "sensor": {
-            "fajr": {
-                "name": "صلاة الفجر"
-            },
-            "sunrise": {
-                "name": "وقت الشروق"
-            },
-            "dhuhr": {
-                "name": "صلاة الظهر"
-            },
-            "asr": {
-                "name": "صلاة العصر"
-            },
-            "maghrib": {
-                "name": "صلاة المغرب"
-            },
-            "isha": {
-                "name": "صلاة العشاء"
-            },
-            "midnight": {
-                "name": "منتصف الليل"
-            },
-            "next_prayer": {
-                "name": "الصلاة القادمة"
-            },
-            "next_prayer_countdown": {
-                "name": "العد التنازلي للصلاة القادمة"
-            },
-            "next_prayer_minutes": {
-                "name": "دقائق حتى الصلاة القادمة"
-            },
-            "juma_time": {
-                "name": "وقت صلاة الجمعة"
-            },
-            "current_prayer_period": {
-                "name": "فترة الصلاة الحالية"
-            },
-            "qibla_direction": {
-                "name": "اتجاه القبلة"
-            },
-            "hijri_date": {
-                "name": "التاريخ الهجري"
-            },
-            "hijri_date_readable": {
-                "name": "التاريخ الهجري المقروء"
-            },
-            "is_ramadan": {
-                "name": "هل هو رمضان"
-            },
-            "is_friday": {
-                "name": "هل هو الجمعة"
-            },
-            "special_night": {
-                "name": "ليلة خاصة"
-            }
+    "abort": {
+      "already_configured": "هذا المسجد أو الموقع مُعدّ بالفعل",
+      "reconfigure_successful": "اكتملت إعادة الإعداد"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "{location}",
+        "description": "مواقيت الصلاة لـ {location} تأتي من {source}. لتغيير المسجد أو الموقع أو المصدر، استخدم «إعادة الإعداد» من قائمة المدخل.",
+        "menu_options": {
+          "method": "طريقة الحساب",
+          "iqamah": "مواقيت الإقامة",
+          "friday": "صلاة الجمعة",
+          "hijri": "التاريخ الهجري والإمساك",
+          "display": "الحساسات والعرض"
         }
-    },
-    "selector": {
-        "source_type": {
-            "options": {
-                "calculated": "حساب من الإحداثيات",
-                "ireland": "واجهة مسجد أيرلندا"
-            }
+      },
+      "method": {
+        "title": "طريقة الحساب",
+        "data": {
+          "calculation_method": "طريقة الحساب"
+        }
+      },
+      "iqamah": {
+        "title": "مواقيت الإقامة",
+        "description": "كيفية الحصول على مواقيت الإقامة. تُستخدم الفروقات الزمنية كبديل عند غياب وقت منشور.",
+        "data": {
+          "iqamah_method": "مصدر مواقيت الإقامة",
+          "iqamah_api_url": "رابط واجهة الإقامة المخصصة"
         },
-        "iqamah_method": {
-            "options": {
-                "offset": "استخدام فروقات الوقت",
-                "disabled": "معطل"
+        "data_description": {
+          "iqamah_api_url": "يُستخدم فقط مع طريقة الواجهة المخصصة. يجب أن يعيد الرابط JSON يحتوي الصلوات الخمس، مثل {\"Fajr\": \"06:30\", \"Dhuhr\": \"13:30\", ...}."
+        },
+        "sections": {
+          "offsets": {
+            "name": "الفروقات بعد دخول وقت كل صلاة",
+            "description": "الدقائق بين دخول وقت الصلاة والإقامة.",
+            "data": {
+              "Fajr": "الفجر",
+              "Dhuhr": "الظهر",
+              "Asr": "العصر",
+              "Maghrib": "المغرب",
+              "Isha": "العشاء"
             }
+          }
         }
+      },
+      "hijri": {
+        "title": "التاريخ الهجري والإمساك",
+        "data": {
+          "hijri_adjustment": "تعديل التاريخ الهجري",
+          "hijri_change_at_maghrib": "يتغير اليوم الهجري عند المغرب",
+          "imsak_minutes": "الإمساك قبل الفجر"
+        },
+        "data_description": {
+          "hijri_adjustment": "أزِح التاريخ الهجري بما يصل إلى يومين لمتابعة إعلان رؤية الهلال المحلي.",
+          "hijri_change_at_maghrib": "عند التفعيل يتقدّم التاريخ الهجري (ورمضان والليالي الخاصة) عند المغرب بدلاً من منتصف الليل.",
+          "imsak_minutes": "عدد الدقائق قبل الفجر التي يُضبط عندها حساس الإمساك."
+        }
+      },
+      "display": {
+        "title": "الحساسات والعرض",
+        "data": {
+          "enabled_groups": "مجموعات الحساسات",
+          "countdown_format": "صيغة العد التنازلي",
+          "prayer_window_minutes": "نافذة الصلاة"
+        },
+        "data_description": {
+          "enabled_groups": "تُنشأ حساسات مواقيت الصلاة دائماً. تُحذف المجموعات المعطّلة عند الحفظ.",
+          "prayer_window_minutes": "خلال هذا العدد من الدقائق بعد دخول وقت الصلاة، يعرض حساس فترة الصلاة الحالية اسم الصلاة بدلاً من «بين ...»."
+        }
+      },
+      "friday": {
+        "title": "صلاة الجمعة",
+        "description": "تتبّع مواقيت صلاة الجمعة لمسجد أو أكثر. المُعدّ حالياً: {mosques}.",
+        "menu_options": {
+          "friday_add": "إضافة مسجد",
+          "friday_select": "تعديل مسجد",
+          "friday_remove": "إزالة مساجد",
+          "init": "رجوع"
+        }
+      },
+      "friday_add": {
+        "title": "إضافة مسجد",
+        "description": "اختر مسجداً ينشر مواقيت الجمعة، أو أدخل المواقيت بنفسك. تُستخدم المواقيت المُدخلة أيضاً كبديل عند عدم نشر شيء.",
+        "data": {
+          "name": "اسم المسجد",
+          "source": "مصدر مواقيت الجمعة",
+          "jumuah_1": "الجمعة الأولى (HH:MM)",
+          "jumuah_2": "الجمعة الثانية (HH:MM)",
+          "label_1": "وصف الجمعة الأولى",
+          "label_2": "وصف الجمعة الثانية"
+        },
+        "data_description": {
+          "name": "اتركه فارغاً لاستخدام اسم المسجد المختار.",
+          "label_1": "اختياري، مثل «للرجال فقط» أو «خطبة بالعربية»."
+        }
+      },
+      "friday_select": {
+        "title": "تعديل مسجد",
+        "data": {
+          "slug": "المسجد"
+        }
+      },
+      "friday_edit": {
+        "title": "تعديل {mosque}",
+        "data": {
+          "name": "اسم المسجد",
+          "source": "مصدر مواقيت الجمعة",
+          "jumuah_1": "الجمعة الأولى (HH:MM)",
+          "jumuah_2": "الجمعة الثانية (HH:MM)",
+          "label_1": "وصف الجمعة الأولى",
+          "label_2": "وصف الجمعة الثانية"
+        }
+      },
+      "friday_remove": {
+        "title": "إزالة مساجد",
+        "description": "تُزال المساجد المختارة وحساساتها.",
+        "data": {
+          "slugs": "المساجد"
+        }
+      }
     },
-    "title": "رفيق الصلاة الإسلامية"
+    "error": {
+      "name_required": "أدخل اسم المسجد",
+      "name_exists": "يوجد مسجد بهذا الاسم في القائمة بالفعل",
+      "invalid_time": "أدخل الوقت بصيغة HH:MM، مثل 13:30",
+      "time_required": "أدخل وقت الجمعة الأولى على الأقل",
+      "jumuah_order": "يجب أن تكون الجمعة الثانية بعد الأولى",
+      "too_many_mosques": "يمكنك تتبّع 10 مساجد كحد أقصى",
+      "label_too_long": "الوصف 40 حرفاً كحد أقصى",
+      "unknown_source": "مسجد غير معروف",
+      "invalid_url": "أدخل رابط http(s) صالحاً",
+      "url_required": "طريقة الواجهة المخصصة تحتاج إلى رابط"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "fajr": { "name": "الفجر" },
+      "sunrise": { "name": "الشروق" },
+      "dhuhr": { "name": "الظهر" },
+      "asr": { "name": "العصر" },
+      "maghrib": { "name": "المغرب" },
+      "isha": { "name": "العشاء" },
+      "midnight": { "name": "منتصف الليل" },
+      "next_prayer": { "name": "الصلاة القادمة" },
+      "current_prayer_period": { "name": "فترة الصلاة الحالية" },
+      "location_name": { "name": "الموقع" },
+      "next_prayer_countdown": { "name": "العد التنازلي للصلاة القادمة" },
+      "next_prayer_minutes": { "name": "الدقائق حتى الصلاة القادمة" },
+      "hijri_date": { "name": "التاريخ الهجري" },
+      "hijri_day": { "name": "اليوم الهجري" },
+      "hijri_month_number": { "name": "رقم الشهر الهجري" },
+      "hijri_month": { "name": "الشهر الهجري" },
+      "hijri_year": { "name": "السنة الهجرية" },
+      "hijri_date_readable": { "name": "التاريخ الهجري (مقروء)" },
+      "hijri_day_month": { "name": "اليوم والشهر الهجري" },
+      "iqamah_fajr": { "name": "إقامة الفجر" },
+      "iqamah_dhuhr": { "name": "إقامة الظهر" },
+      "iqamah_asr": { "name": "إقامة العصر" },
+      "iqamah_maghrib": { "name": "إقامة المغرب" },
+      "iqamah_isha": { "name": "إقامة العشاء" },
+      "qibla_direction": { "name": "اتجاه القبلة" },
+      "is_ramadan": { "name": "رمضان" },
+      "is_friday": { "name": "الجمعة" },
+      "special_night": { "name": "ليلة خاصة" },
+      "ramadan_day": { "name": "يوم رمضان" },
+      "days_until_ramadan": { "name": "الأيام حتى رمضان" },
+      "upcoming_islamic_event": { "name": "المناسبة الإسلامية القادمة" },
+      "imsak": { "name": "الإمساك" },
+      "iftar": { "name": "الإفطار" },
+      "juma_time": { "name": "صلاة الجمعة" },
+      "friday_jumuah_1": { "name": "الجمعة 1" },
+      "friday_jumuah_2": { "name": "الجمعة 2" }
+    }
+  },
+  "selector": {
+    "source_type": {
+      "options": {
+        "calculated": "حساب من موقع جغرافي",
+        "ireland": "جدول منشور من مسجد في أيرلندا"
+      }
+    },
+    "ireland_mosque": {
+      "options": {
+        "ie-icci": "المركز الثقافي الإسلامي في أيرلندا (ICCI)، كلونسكي",
+        "ie-mcnd": "الجالية المسلمة شمال دبلن (MCND)",
+        "ie-hicc": "مركز هانسفيلد الثقافي الإسلامي (HICC)",
+        "ie-sdic": "المركز الإسلامي جنوب دبلن (SDIC)",
+        "ie-mai": "الجمعية الإسلامية في أيرلندا (MAI)، تالا"
+      }
+    },
+    "friday_source": {
+      "options": {
+        "manual": "إدخال يدوي",
+        "ie-icci": "المركز الثقافي الإسلامي في أيرلندا (ICCI) - مواقيت يدوية",
+        "ie-mcnd": "الجالية المسلمة شمال دبلن (MCND)",
+        "ie-hicc": "مركز هانسفيلد الثقافي الإسلامي (HICC)",
+        "ie-sdic": "المركز الإسلامي جنوب دبلن (SDIC)",
+        "ie-mai": "الجمعية الإسلامية في أيرلندا (MAI)، تالا - مواقيت يدوية"
+      }
+    },
+    "calculation_method": {
+      "options": {
+        "jafari": "الشيعة الاثنا عشرية (الجعفري)",
+        "karachi": "جامعة العلوم الإسلامية، كراتشي",
+        "isna": "الجمعية الإسلامية لأمريكا الشمالية (ISNA)",
+        "mwl": "رابطة العالم الإسلامي",
+        "makkah": "جامعة أم القرى، مكة المكرمة",
+        "egypt": "الهيئة المصرية العامة للمساحة",
+        "tehran": "معهد الجيوفيزياء، جامعة طهران",
+        "gulf": "منطقة الخليج",
+        "kuwait": "الكويت",
+        "qatar": "قطر",
+        "singapore": "المجلس الإسلامي في سنغافورة",
+        "france": "اتحاد المنظمات الإسلامية في فرنسا",
+        "turkey": "رئاسة الشؤون الدينية، تركيا",
+        "russia": "الإدارة الروحية لمسلمي روسيا",
+        "moonsighting": "لجنة رؤية الهلال العالمية",
+        "dubai": "دبي",
+        "jakim": "جاكيم، ماليزيا",
+        "tunisia": "تونس",
+        "algeria": "الجزائر",
+        "kemenag": "وزارة الشؤون الدينية، إندونيسيا",
+        "morocco": "المغرب",
+        "portugal": "الجالية الإسلامية في لشبونة، البرتغال",
+        "jordan": "الأردن"
+      }
+    },
+    "iqamah_method": {
+      "options": {
+        "offset": "فروقات ثابتة بعد كل صلاة",
+        "mosque": "منشورة من المسجد",
+        "api": "واجهة JSON مخصصة",
+        "disabled": "معطّل"
+      }
+    },
+    "countdown_format": {
+      "options": {
+        "sentence": "جملة (العصر بعد 45 دقيقة)",
+        "clock": "ساعة (00:45)",
+        "short": "الدقائق فقط (45)"
+      }
+    },
+    "sensor_groups": {
+      "options": {
+        "iqamah": "مواقيت الإقامة",
+        "hijri": "التاريخ الهجري",
+        "countdown": "العد التنازلي",
+        "qibla": "اتجاه القبلة",
+        "special_dates": "رمضان والإمساك والإفطار والمناسبات",
+        "friday": "صلاة الجمعة"
+      }
+    }
+  },
+  "issues": {
+    "provider_fallback": {
+      "title": "{location}: مواقيت الصلاة محسوبة وليست من {mosque}",
+      "description": "تعذّرت قراءة مواقيت الصلاة من {mosque} ({url}): {error}\n\nإلى أن يعمل المصدر مجدداً، يعرض {location} مواقيت من {fallback} لإحداثياته. تُظهر الخاصية `source` في حساسات المواقيت المصدر المستخدم. تُغلق هذه المشكلة تلقائياً عند تعافي المصدر."
+    }
+  },
+  "exceptions": {
+    "date_not_available": {
+      "message": "{source} ينشر مواقيت اليوم والغد فقط؛ التاريخ {date} غير متاح."
+    },
+    "entry_not_found": {
+      "message": "لا يوجد مدخل محمّل لرفيق الصلاة بالمعرّف {entry_id}."
+    },
+    "no_entries": {
+      "message": "لم يتم إعداد أي مدخل لرفيق الصلاة."
+    }
+  },
+  "services": {
+    "get_prayer_times": {
+      "name": "جلب مواقيت الصلاة",
+      "description": "يعيد مواقيت الصلاة ليوم أو أكثر لموقع أو مسجد مُعدّ.",
+      "fields": {
+        "config_entry_id": {
+          "name": "المدخل",
+          "description": "الموقع أو المسجد المستخدم. الافتراضي هو أول مدخل مُعدّ."
+        },
+        "date": {
+          "name": "تاريخ البداية",
+          "description": "أول يوم يُعاد. الافتراضي هو اليوم."
+        },
+        "days": {
+          "name": "الأيام",
+          "description": "عدد الأيام المتتالية (من 1 إلى 366). واجهات المساجد تعيد اليوم والغد فقط."
+        }
+      }
+    }
+  }
 }

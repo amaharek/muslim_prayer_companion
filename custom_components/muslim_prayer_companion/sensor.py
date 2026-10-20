@@ -1,8 +1,9 @@
-"""Platform to retrieve Muslim Prayer Companion information for Home Assistant."""
+"""Sensor platform for Muslim Prayer Companion."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -11,11 +12,27 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
+from homeassistant.const import UnitOfTime
+from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import parse_datetime
 
-from .const import CONF_LOCATION_NAME, DEFAULT_LOCATION_NAME, DOMAIN, LOGGER, NAME
+from .const import (
+    ATTR_SOURCE,
+    DOMAIN,
+    GROUP_COUNTDOWN,
+    GROUP_FRIDAY,
+    GROUP_HIJRI,
+    GROUP_IQAMAH,
+    GROUP_PRAYER_TIMES,
+    GROUP_QIBLA,
+    GROUP_SPECIAL_DATES,
+    LOGGER,
+    NAME,
+)
+from .coordinator import MuslimPrayerCompanionDataUpdateCoordinator
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -23,186 +40,343 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
     from . import MuslimPrayerCompanionConfigEntry
-    from .coordinator import MuslimPrayerCompanionDataUpdateCoordinator
+    from .helpers.friday import FridayMosqueConfig
+    from .helpers.settings import Settings
 
 
-# Define sensor types - backward compatible keys preserved
-SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
-    # Prayer Times (original sensors - backward compatible)
-    SensorEntityDescription(
+@dataclass(frozen=True, kw_only=True)
+class MuslimPrayerSensorEntityDescription(SensorEntityDescription):
+    """Sensor description with the settings group it belongs to."""
+
+    group: str = GROUP_PRAYER_TIMES
+
+
+# Keys (and therefore unique_ids) are unchanged since 2.x: {key}_{entry_id}.
+SENSOR_TYPES: tuple[MuslimPrayerSensorEntityDescription, ...] = (
+    # Prayer times (always on)
+    MuslimPrayerSensorEntityDescription(
         key="Fajr",
-        name="Fajr Prayer",
+        translation_key="fajr",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:weather-sunset-up",
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="Sunrise",
-        name="Sunrise Time",
+        translation_key="sunrise",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:weather-sunny",
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="Dhuhr",
-        name="Dhuhr Prayer",
+        translation_key="dhuhr",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:weather-sunny",
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="Asr",
-        name="Asr Prayer",
+        translation_key="asr",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:weather-sunny-off",
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="Maghrib",
-        name="Maghrib Prayer",
+        translation_key="maghrib",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:weather-sunset-down",
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="Isha",
-        name="Isha Prayer",
+        translation_key="isha",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:weather-night",
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="Midnight",
-        name="Midnight Time",
+        translation_key="midnight",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-outline",
     ),
-    # Hijri Date Information (original sensors - backward compatible)
-    SensorEntityDescription(
-        key="hijri_date",
-        name="Hijri Date",
-        icon="mdi:calendar-islamic",
-    ),
-    SensorEntityDescription(
-        key="hijri_day",
-        name="Hijri Day",
-        icon="mdi:calendar-today",
-    ),
-    SensorEntityDescription(
-        key="hijri_month_num",
-        name="Hijri Month Number",
-        icon="mdi:calendar-month",
-    ),
-    SensorEntityDescription(
-        key="hijri_month_readable",
-        name="Hijri Month",
-        icon="mdi:calendar-month",
-    ),
-    SensorEntityDescription(
-        key="hijri_year",
-        name="Hijri Year",
-        icon="mdi:calendar",
-    ),
-    SensorEntityDescription(
-        key="hijri_date_readable",
-        name="Hijri Date Readable",
-        icon="mdi:calendar-islamic",
-    ),
-    SensorEntityDescription(
-        key="hijri_day_month_readable",
-        name="Hijri Day and Month",
-        icon="mdi:calendar-islamic",
-    ),
-    # Iqamah Times (original sensors - backward compatible)
-    SensorEntityDescription(
-        key="iqamah_Fajr",
-        name="Iqamah Fajr",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:mosque",
-    ),
-    SensorEntityDescription(
-        key="iqamah_Dhuhr",
-        name="Iqamah Dhuhr",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:mosque",
-    ),
-    SensorEntityDescription(
-        key="iqamah_Asr",
-        name="Iqamah Asr",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:mosque",
-    ),
-    SensorEntityDescription(
-        key="iqamah_Maghrib",
-        name="Iqamah Maghrib",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:mosque",
-    ),
-    SensorEntityDescription(
-        key="iqamah_Isha",
-        name="Iqamah Isha",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:mosque",
-    ),
-    # Next Prayer Sensor (original - backward compatible)
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="next_prayer",
-        name="Next Prayer",
+        translation_key="next_prayer",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-alert",
     ),
-    # NEW SENSORS - Phase 4 additions
-    # Countdown sensors
-    SensorEntityDescription(
-        key="next_prayer_countdown",
-        name="Next Prayer Countdown",
-        icon="mdi:timer-outline",
-    ),
-    SensorEntityDescription(
-        key="next_prayer_minutes",
-        name="Next Prayer Minutes",
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="min",
-        icon="mdi:timer-sand",
-    ),
-    # Friday prayer sensors
-    SensorEntityDescription(
-        key="juma_time",
-        name="Jumu'a Time",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:mosque",
-    ),
-    # Prayer period sensor
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="current_prayer_period",
-        name="Current Prayer Period",
+        translation_key="current_prayer_period",
         icon="mdi:clock-time-eight",
     ),
-    # Qibla direction
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
+        key="location_name",
+        translation_key="location_name",
+        icon="mdi:map-marker",
+    ),
+    # Countdown
+    MuslimPrayerSensorEntityDescription(
+        key="next_prayer_countdown",
+        translation_key="next_prayer_countdown",
+        icon="mdi:timer-outline",
+        group=GROUP_COUNTDOWN,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="next_prayer_minutes",
+        translation_key="next_prayer_minutes",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        icon="mdi:timer-sand",
+        group=GROUP_COUNTDOWN,
+    ),
+    # Hijri date
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_date",
+        translation_key="hijri_date",
+        icon="mdi:calendar-islamic",
+        group=GROUP_HIJRI,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_day",
+        translation_key="hijri_day",
+        icon="mdi:calendar-today",
+        group=GROUP_HIJRI,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_month_num",
+        translation_key="hijri_month_number",
+        icon="mdi:calendar-month",
+        group=GROUP_HIJRI,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_month_readable",
+        translation_key="hijri_month",
+        icon="mdi:calendar-month",
+        group=GROUP_HIJRI,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_year",
+        translation_key="hijri_year",
+        icon="mdi:calendar",
+        group=GROUP_HIJRI,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_date_readable",
+        translation_key="hijri_date_readable",
+        icon="mdi:calendar-islamic",
+        group=GROUP_HIJRI,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="hijri_day_month_readable",
+        translation_key="hijri_day_month",
+        icon="mdi:calendar-islamic",
+        group=GROUP_HIJRI,
+    ),
+    # Iqamah
+    MuslimPrayerSensorEntityDescription(
+        key="iqamah_Fajr",
+        translation_key="iqamah_fajr",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_IQAMAH,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="iqamah_Dhuhr",
+        translation_key="iqamah_dhuhr",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_IQAMAH,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="iqamah_Asr",
+        translation_key="iqamah_asr",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_IQAMAH,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="iqamah_Maghrib",
+        translation_key="iqamah_maghrib",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_IQAMAH,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="iqamah_Isha",
+        translation_key="iqamah_isha",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_IQAMAH,
+    ),
+    # Qibla
+    MuslimPrayerSensorEntityDescription(
         key="qibla_direction",
-        name="Qibla Direction",
+        translation_key="qibla_direction",
         native_unit_of_measurement="°",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:compass",
-    ),
-    # Location info
-    SensorEntityDescription(
-        key="location_name",
-        name="Location",
-        icon="mdi:map-marker",
+        group=GROUP_QIBLA,
     ),
     # Special dates
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="is_ramadan",
-        name="Is Ramadan",
+        translation_key="is_ramadan",
         icon="mdi:moon-waning-crescent",
+        group=GROUP_SPECIAL_DATES,
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="is_friday",
-        name="Is Friday",
+        translation_key="is_friday",
         icon="mdi:calendar-week",
+        group=GROUP_SPECIAL_DATES,
     ),
-    SensorEntityDescription(
+    MuslimPrayerSensorEntityDescription(
         key="special_night",
-        name="Special Night",
+        translation_key="special_night",
         icon="mdi:star-crescent",
+        group=GROUP_SPECIAL_DATES,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="ramadan_day",
+        translation_key="ramadan_day",
+        icon="mdi:calendar-star",
+        group=GROUP_SPECIAL_DATES,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="days_until_ramadan",
+        translation_key="days_until_ramadan",
+        native_unit_of_measurement=UnitOfTime.DAYS,
+        icon="mdi:calendar-clock",
+        group=GROUP_SPECIAL_DATES,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="upcoming_islamic_event",
+        translation_key="upcoming_islamic_event",
+        icon="mdi:calendar-heart",
+        group=GROUP_SPECIAL_DATES,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="imsak",
+        translation_key="imsak",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:food-off",
+        group=GROUP_SPECIAL_DATES,
+    ),
+    MuslimPrayerSensorEntityDescription(
+        key="iftar",
+        translation_key="iftar",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:food",
+        group=GROUP_SPECIAL_DATES,
+    ),
+    # Friday (legacy alias, kept for compatibility)
+    MuslimPrayerSensorEntityDescription(
+        key="juma_time",
+        translation_key="juma_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_FRIDAY,
     ),
 )
+
+FRIDAY_SENSOR_TYPES: tuple[MuslimPrayerSensorEntityDescription, ...] = tuple(
+    MuslimPrayerSensorEntityDescription(
+        key=f"jumuah_{session}",
+        translation_key=f"friday_jumuah_{session}",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:mosque",
+        group=GROUP_FRIDAY,
+    )
+    for session in (1, 2)
+)
+
+SOURCE_ATTRIBUTE_KEYS = {
+    "Fajr",
+    "Sunrise",
+    "Dhuhr",
+    "Asr",
+    "Maghrib",
+    "Isha",
+    "Midnight",
+    "next_prayer",
+    "imsak",
+    "iftar",
+}
+
+COMPASS_DIRECTIONS = (
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW",
+)
+DEGREES_PER_DIRECTION = 22.5
+
+
+def compass_direction(degrees: float) -> str:
+    """Convert a bearing in degrees to a 16-point compass direction."""
+    return COMPASS_DIRECTIONS[round(degrees / DEGREES_PER_DIRECTION) % len(COMPASS_DIRECTIONS)]
+
+
+def friday_device_identifier(entry_id: str, slug: str) -> str:
+    """Return the device identifier of a Friday mosque."""
+    return f"{entry_id}_friday_{slug}"
+
+
+def friday_unique_id(entry_id: str, slug: str, session: int) -> str:
+    """Return the unique_id of a Friday sensor."""
+    return f"friday_{slug}_jumuah_{session}_{entry_id}"
+
+
+def static_descriptions(settings: Settings) -> list[MuslimPrayerSensorEntityDescription]:
+    """Return the fixed sensors enabled by the settings."""
+    return [
+        description
+        for description in SENSOR_TYPES
+        if description.group == GROUP_PRAYER_TIMES or description.group in settings.enabled_groups
+    ]
+
+
+def expected_unique_ids(entry_id: str, settings: Settings) -> set[str]:
+    """Return every sensor unique_id this entry should currently have."""
+    expected = {f"{description.key}_{entry_id}" for description in static_descriptions(settings)}
+    if GROUP_FRIDAY in settings.enabled_groups:
+        for mosque in settings.friday_mosques:
+            expected.update(friday_unique_id(entry_id, mosque.slug, s) for s in (1, 2))
+    return expected
+
+
+@callback
+def _async_cleanup_stale(
+    hass: HomeAssistant, entry: ConfigEntry, settings: Settings, expected: set[str]
+) -> None:
+    """Remove sensors and Friday devices that the current settings no longer create."""
+    ent_reg = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if reg_entry.domain == "sensor" and reg_entry.unique_id not in expected:
+            LOGGER.debug("Removing stale entity %s", reg_entry.entity_id)
+            ent_reg.async_remove(reg_entry.entity_id)
+
+    friday_enabled = GROUP_FRIDAY in settings.enabled_groups
+    current = {friday_device_identifier(entry.entry_id, m.slug) for m in settings.friday_mosques}
+    prefix = f"{entry.entry_id}_friday_"
+    dev_reg = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        for domain, identifier in device.identifiers:
+            if domain != DOMAIN or not identifier.startswith(prefix):
+                continue
+            if not friday_enabled or identifier not in current:
+                LOGGER.debug("Removing stale Friday device %s", identifier)
+                dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 async def async_setup_entry(
@@ -211,149 +385,155 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Muslim Prayer Companion sensor platform."""
-    # Get coordinator from entry runtime data (multi-instance support)
     coordinator = config_entry.runtime_data.coordinator
+    settings = coordinator.settings
 
-    # Create sensors
-    entities = [
+    _async_cleanup_stale(
+        hass, config_entry, settings, expected_unique_ids(config_entry.entry_id, settings)
+    )
+
+    entities: list[SensorEntity] = [
         MuslimPrayerCompanionTimeSensor(coordinator, description, config_entry)
-        for description in SENSOR_TYPES
+        for description in static_descriptions(settings)
     ]
+    if GROUP_FRIDAY in settings.enabled_groups:
+        entities.extend(
+            MuslimPrayerCompanionFridaySensor(coordinator, description, config_entry, mosque)
+            for mosque in settings.friday_mosques
+            for description in FRIDAY_SENSOR_TYPES
+        )
 
     async_add_entities(entities)
-
-    LOGGER.debug(
-        "Set up %d sensors for %s",
-        len(entities),
-        config_entry.data.get(CONF_LOCATION_NAME, DEFAULT_LOCATION_NAME),
-    )
+    LOGGER.debug("Set up %d sensors for %s", len(entities), coordinator.location_name)
 
 
 class MuslimPrayerCompanionTimeSensor(
     CoordinatorEntity[MuslimPrayerCompanionDataUpdateCoordinator], SensorEntity
 ):
-    """Representation of a Muslim Prayer Companion sensor."""
+    """A sensor fed from the coordinator data dict."""
 
     _attr_has_entity_name = True
+    entity_description: MuslimPrayerSensorEntityDescription
 
     def __init__(
         self,
         coordinator: MuslimPrayerCompanionDataUpdateCoordinator,
-        description: SensorEntityDescription,
+        description: MuslimPrayerSensorEntityDescription,
         config_entry: ConfigEntry,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-
-        # IMPORTANT: Preserve backward compatible unique_id format
-        # Original format: {key}_{entry_id}
+        # Backward compatible unique_id format: {key}_{entry_id}
         self._attr_unique_id = f"{description.key}_{config_entry.entry_id}"
-
-        # Device info groups all sensors under one device per config entry
-        location_name = config_entry.data.get(CONF_LOCATION_NAME, DEFAULT_LOCATION_NAME)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"{NAME} - {location_name}",
+            name=f"{NAME} - {coordinator.location_name}",
             entry_type=DeviceEntryType.SERVICE,
-            manufacturer="Muslim Prayer Companion",
-            model="Prayer Times",
+            manufacturer=NAME,
+            model="Prayer times",
         )
+
+    @property
+    def _data(self) -> dict[str, Any]:
+        return self.coordinator.data or {}
+
+    def _raw_value(self) -> Any:
+        return self._data.get(self.entity_description.key)
 
     @property
     def native_value(self) -> Any:
         """Return the state of the sensor."""
-        if self.coordinator.data is None:
-            return None
-
-        value = self.coordinator.data.get(self.entity_description.key)
+        value = self._raw_value()
         if value is None:
-            # Don't log error for optional sensors that may not be present
-            if self.entity_description.key not in (
-                "juma_time",
-                "special_night",
-                "Midnight",
-            ):
-                LOGGER.debug("No value found for %s", self.entity_description.key)
             return None
 
-        # Handle TIMESTAMP device class
         if self.entity_description.device_class == SensorDeviceClass.TIMESTAMP:
             if isinstance(value, datetime):
                 return value
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 return parse_datetime(value)
-            else:
-                LOGGER.warning(
-                    "Unexpected type for %s: %s",
-                    self.entity_description.key,
-                    type(value),
-                )
-                return None
+            LOGGER.warning("Unexpected type for %s: %s", self.entity_description.key, type(value))
+            return None
 
-        # Handle boolean values (convert to string for HA)
         if isinstance(value, bool):
             return "true" if value else "false"
-
+        if isinstance(value, date):
+            return value.isoformat()
         return value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes for the sensor."""
         attrs: dict[str, Any] = {}
+        key = self.entity_description.key
+        data = self._data
 
-        # For the "next_prayer" sensor, add the prayer name
-        if self.entity_description.key == "next_prayer":
-            next_prayer_name = self.coordinator.data.get("next_prayer_name")
-            if next_prayer_name:
-                attrs["prayer"] = next_prayer_name
-
-        # For qibla sensor, add compass direction
-        if self.entity_description.key == "qibla_direction":
-            qibla_degrees = self.coordinator.data.get("qibla_direction")
-            if qibla_degrees is not None:
-                attrs["compass_direction"] = self._get_compass_direction(qibla_degrees)
-
-        # For hijri date sensors, add additional context
-        if self.entity_description.key == "hijri_date_readable":
-            attrs["is_ramadan"] = self.coordinator.data.get("is_ramadan", False)
-
+        if key in SOURCE_ATTRIBUTE_KEYS:
+            attrs[ATTR_SOURCE] = data.get("source")
+        if key.startswith("iqamah_"):
+            attrs[ATTR_SOURCE] = data.get("iqamah_source")
+        if key == "next_prayer" and data.get("next_prayer_name"):
+            attrs["prayer"] = data["next_prayer_name"]
+        if key == "qibla_direction" and data.get("qibla_direction") is not None:
+            attrs["compass_direction"] = compass_direction(data["qibla_direction"])
+        if key == "hijri_date_readable":
+            attrs["is_ramadan"] = data.get("is_ramadan", False)
+        if key == "upcoming_islamic_event":
+            event_date = data.get("upcoming_islamic_event_date")
+            attrs["date"] = event_date.isoformat() if isinstance(event_date, date) else None
+            attrs["days_until"] = data.get("upcoming_islamic_event_days")
+        if key == "juma_time":
+            attrs[ATTR_SOURCE] = data.get("source")
         return attrs
 
-    @staticmethod
-    def _get_compass_direction(degrees: float) -> str:
-        """Convert degrees to compass direction."""
-        directions = [
-            "N",
-            "NNE",
-            "NE",
-            "ENE",
-            "E",
-            "ESE",
-            "SE",
-            "SSE",
-            "S",
-            "SSW",
-            "SW",
-            "WSW",
-            "W",
-            "WNW",
-            "NW",
-            "NNW",
-        ]
-        index = round(degrees / 22.5) % 16
-        return directions[index]
+
+class MuslimPrayerCompanionFridaySensor(MuslimPrayerCompanionTimeSensor):
+    """Jumu'ah time of one Friday mosque, under its own device."""
+
+    def __init__(
+        self,
+        coordinator: MuslimPrayerCompanionDataUpdateCoordinator,
+        description: MuslimPrayerSensorEntityDescription,
+        config_entry: ConfigEntry,
+        mosque: FridayMosqueConfig,
+    ) -> None:
+        """Initialize the Friday sensor."""
+        super().__init__(coordinator, description, config_entry)
+        self._mosque = mosque
+        session = int(description.key.rsplit("_", 1)[1])
+        self._attr_unique_id = friday_unique_id(config_entry.entry_id, mosque.slug, session)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, friday_device_identifier(config_entry.entry_id, mosque.slug))},
+            name=mosque.name,
+            entry_type=DeviceEntryType.SERVICE,
+            manufacturer=NAME,
+            model="Friday prayers",
+            via_device=(DOMAIN, config_entry.entry_id),
+        )
+
+    @property
+    def _mosque_data(self) -> dict[str, Any] | None:
+        return (self._data.get("friday") or {}).get(self._mosque.slug)
+
+    def _raw_value(self) -> Any:
+        info = self._mosque_data
+        return info.get(self.entity_description.key) if info else None
 
     @property
     def available(self) -> bool:
-        """Return True if sensor is available."""
-        # Base availability from coordinator
-        if not super().available:
-            return False
+        """Available while the mosque is configured and the coordinator is healthy."""
+        return super().available and self._mosque_data is not None
 
-        # Some sensors may not always have data
-        if self.entity_description.key in ("juma_time",):
-            # juma_time only available on Fridays
-            return self.coordinator.data.get("is_friday", False)
-
-        return True
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return mosque name, label and where the time came from."""
+        info = self._mosque_data or {}
+        session = int(self.entity_description.key.rsplit("_", 1)[1])
+        labels = info.get("labels") or []
+        return {
+            "mosque_name": self._mosque.name,
+            "label": labels[session - 1] if len(labels) >= session else None,
+            ATTR_SOURCE: info.get("source", self._mosque.source),
+            "times_from": info.get("times_from"),
+        }
