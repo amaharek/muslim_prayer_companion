@@ -4,139 +4,129 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Muslim Prayer Companion is a Home Assistant (HACS) custom integration that provides accurate prayer times, Iqamah times, Hijri calendar information, and Islamic companion features as sensors.
+Muslim Prayer Companion is a Home Assistant (HACS) custom integration: prayer times (calculated offline or from an Irish mosque's published source), Iqamah times, Friday prayers for several mosques, Hijri calendar, countdown and special-date sensors, events and a `get_prayer_times` action.
 
-**Stack**: Python 3.12+, UV (package manager), Home Assistant custom component
+**Stack**: Python 3.13, Home Assistant custom component (minimum Home Assistant 2025.2.4), pip/venv
 
-**Version**: 3.0.0 (Multi-instance support, API provider abstraction)
+**Version**: 4.0.0
 
 ## Common Commands
 
 ```bash
-# Install dependencies (using UV)
-uv sync
+# Set up (or run scripts/setup)
+python3.13 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 
-# Run tests
-uv run pytest --cov custom_components/tests/ -v
+# Tests
+pytest -q --cov
+pytest tests/test_coordinator.py -q
+pytest tests/test_icci_timetable.py -q -k dst
 
-# Run specific test file
-uv run pytest tests/api_providers/test_ireland.py -v
+# Lint and format (ruff replaces black/isort/pyupgrade)
+ruff check . --fix
+ruff format .
+pre-commit run --all-files
 
-# Lint and format
-uv run ruff format .
-uv run ruff check . --fix
-uv run pre-commit run --all-files
+# Bundled data
+python -I scripts/build_icci_timetable.py --check     # verify data/icci_timetable.json
+python -I scripts/build_icci_timetable.py --download  # rebuild from the Wayback snapshot
+python scripts/check_mosques.py                       # fetch and parse every mosque source
+python scripts/check_mosques.py --offline             # registry and bundled data only
 
-# Local development (runs Home Assistant with integration)
+# Local development (runs Home Assistant with the integration)
 scripts/develop
 ```
 
 ## Architecture
 
-The integration follows Home Assistant's standard pattern with multi-instance support:
-
 ```
-Config Flow → Config Entry → Coordinator (per entry) → Sensors
+Config flow → Config entry (data = identity, options = settings) → Coordinator (per entry) → Sensors
+                                                                        │
+                                              providers (one ProviderResult per fetch)
 ```
 
-### Key Components
+### Layout
 
 ```
 custom_components/muslim_prayer_companion/
-├── __init__.py              # Entry point, migration handler
-├── config_flow.py           # Multi-step configuration UI
-├── const.py                 # Constants, method definitions
-├── coordinator.py           # Data coordinator using providers
-├── sensor.py                # 30+ sensor entities
-├── api_providers/           # Provider abstraction layer
-│   ├── base.py              # Abstract base classes, data models
-│   ├── calculated.py        # prayer-times-calculator wrapper
-│   └── ireland.py           # ICCI, MCND, HICC, SDIC APIs
-├── helpers/                 # Utility modules
-│   ├── hijri.py             # Hijri date utilities
-│   ├── qibla.py             # Qibla direction calculation
-│   └── special_dates.py     # Ramadan, Eid, special nights
-└── translations/            # UI translations (en, ar)
+├── __init__.py              # Setup, unload, remove_entry, device removal, migration to v3, get_prayer_times action
+├── config_flow.py           # Setup (source → mosque | location → method), reconfigure, options menu (5 pages)
+├── const.py                 # Keys, defaults, groups, 23 calculation methods
+├── coordinator.py           # Fetch → fallback + Repairs → derived data; per-minute tick; events; midnight refresh; retry
+├── sensor.py                # Descriptions with translation_key + group; Friday sensors/devices; stale-entity cleanup
+├── diagnostics.py
+├── services.yaml
+├── manifest.json            # requirements: prayer-times-calculator-offline==1.0.3, hijridate==2.3.0
+├── strings.json             # byte-identical copy of translations/en.json
+├── data/
+│   ├── mosques.json         # Mosque registry (the only place mosques are defined)
+│   └── icci_timetable.json  # ICCI perpetual table (verified by SHA-256 in tests)
+├── api_providers/
+│   ├── base.py              # PrayerTimesData, IqamahTimesData, JumuahTime, ProviderResult, PrayerTimesProvider
+│   ├── calculated.py        # prayer-times-calculator-offline (iso8601 UTC output), runs in a thread
+│   ├── ireland.py           # IrelandProvider: dispatch on registry source type, payload cache (10 min)
+│   ├── icci_timetable.py    # Bundled table: fixed clock rule (UTC+1 Apr–Oct), Midnight midpoint
+│   ├── dpt.py               # Daily Prayer Time plugin parser (today, tomorrow, jamah, jumuah)
+│   ├── mai.py               # maionline.ie homepage parser (today only, strict six labels)
+│   └── http.py              # fetch_text/fetch_json with error mapping (HTML-with-200 → ProviderResponseError)
+├── helpers/
+│   ├── registry.py          # Loads mosques.json at import; MOSQUES, MOSQUE_KEYS, distance helpers
+│   ├── settings.py          # Settings.from_entry, default_options, entry_unique_id
+│   ├── derived.py           # compute_derived(): the whole data dict, pure
+│   ├── friday.py            # FridayMosqueConfig, validation, next_friday_occurrence, FridayPrayersFetcher
+│   ├── iqamah.py            # offsets, custom JSON API client
+│   ├── hijri.py             # hijridate wrapper, adjustment, Maghrib rollover
+│   ├── special_dates.py     # Ramadan, special nights, upcoming events (take a HijriDate)
+│   └── qibla.py
+└── translations/            # en.json, ar.json (same key set, tested)
 ```
 
-### Data Flow
+### Data flow
 
-1. User configures via multi-step config flow (source type → location → method)
-2. Coordinator creates appropriate provider (Calculated or Ireland)
-3. Provider fetches prayer times, returns standardized `PrayerTimesData`
-4. Coordinator computes Iqamah times, Hijri date, next prayer
-5. Sensors expose data to Home Assistant
-6. Coordinator schedules next update at midnight
+1. The config flow stores identity in `entry.data` (`source_type`, `calculation_method` = method or mosque key, coordinates, name, timezone) and everything changeable in `entry.options`. Options pages save the full merged dict and reload the entry (no update listener).
+2. `Settings.from_entry()` gives the coordinator a typed view with defaults.
+3. The provider's `async_fetch(today)` returns a `ProviderResult` (today, tomorrow, iqamah, jumuah, source). All datetimes are UTC; mosque clock times are interpreted in the mosque's zone.
+4. On `ProviderError` (or any exception) from a mosque source the coordinator fetches from a `CalculatedProvider` (ISNA, same coordinates), relabels `source` to `calculated-fallback:isna` and opens the Repairs issue `provider_fallback_<entry_id>`; recovery closes it. If that fails too, today's last result is kept, else `UpdateFailed` with retry (60/120/300/600 s).
+5. `compute_derived()` builds the data dict (next occurrences, next prayer/countdown, period, iqamah, Hijri, special dates, Friday, source). It runs after every fetch and on every minute tick; the tick also fires `muslim_prayer_companion_event` for instants that passed since the last tick.
+6. Sensors read the dict. Friday sensors read `data["friday"][slug]`.
 
-### Multi-Instance Pattern
+### Conventions
 
-Each config entry has its own coordinator stored in `entry.runtime_data`:
-
-- Supports multiple locations/mosques simultaneously
-- Each entry has unique sensor IDs: `{key}_{entry_id}`
-- Backward compatible with v1 config entries (auto-migration)
-
-### API Providers
-
-| Provider             | Source                      | Features                                      |
-| -------------------- | --------------------------- | --------------------------------------------- |
-| `CalculatedProvider` | prayer-times-calculator lib | 14 standard methods (ISNA, MWL, etc.)         |
-| `IrelandProvider`    | ICCI, MCND, HICC, SDIC APIs | Ireland mosque times, iqamah (WordPress APIs) |
-
-### Key Data Models
-
-```python
-PrayerTimesData  # Standardized prayer times (UTC datetime)
-IqamahTimesData  # Iqamah times with validation
-MosqueInfo       # Mosque metadata
-ProviderConfig   # Provider configuration
-```
-
-### Sensors
-
-**Prayer Times**: Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha, Midnight
-**Iqamah Times**: iqamah_Fajr, iqamah_Dhuhr, iqamah_Asr, iqamah_Maghrib, iqamah_Isha
-**Hijri Date**: hijri_date, hijri_day, hijri_month_readable, hijri_year, etc.
-**Next Prayer**: next_prayer, next_prayer_name, next_prayer_countdown, next_prayer_minutes
-**Additional**: qibla_direction, current_prayer_period, juma_time, is_ramadan, is_friday, special_night
+- Entity unique*ids are `{key}*{entry*id}`(unchanged since 2.x) and`friday*{slug}_jumuah_{n}\_{entry_id}`. Never change keys.
+- Mosques are added in `data/mosques.json` plus translation labels (`selector.ireland_mosque.options`, `selector.friday_source.options`); see CONTRIBUTING.md. A new source type needs a parser module, a branch in `IrelandProvider.async_fetch` and a type in `helpers/registry.py`.
+- Providers never import Home Assistant and never create their own aiohttp session (tests mock `async_get_clientsession`).
+- `strings.json` must stay identical to `translations/en.json`; `ar.json` must have the same keys (tests check both).
+- Keep `manifest.json` requirements pinned and equal to `pyproject.toml` dependencies (tested).
 
 ## Testing
 
 ```bash
-# Run all tests
-uv run pytest -v
-
-# Run with coverage
-uv run pytest --cov custom_components/muslim_prayer_companion -v
-
-# Run specific test class
-uv run pytest tests/api_providers/test_base.py::TestPrayerTimesData -v
-
-# Run with debug logging
-uv run pytest -v --log-cli-level=DEBUG
+pytest -q                      # everything (~280 tests)
+pytest -q --cov --cov-report=term-missing
+pytest tests/test_config_flow.py -q -k friday
 ```
-
-### Test Structure
 
 ```
 tests/
-├── conftest.py              # Shared fixtures
-├── test_integration.py      # Full integration tests
-├── test_migration.py        # Config entry migration tests
-├── test_sensor_formats.py   # Sensor value format validation
-├── test_helpers.py          # Test utility functions
-└── api_providers/           # Provider tests
-    ├── test_base.py         # Data model validation
-    └── test_ireland.py      # Ireland API tests
+├── conftest.py                 # hass in Dublin, make_entry(), setup_entry(), advance()/move_to(), fixture loaders,
+│                               # aioclient_mock for all mosque sites, freezegun shim for the offline calculator
+├── fixtures/                   # dpt_{mcnd,hicc,sdic}.json, mai_home.html, mai_home_evening.html (captured 20 Oct 2026)
+├── test_init.py                # setup/unload, service registration
+├── test_coordinator.py         # tick, events, midnight, fallback + Repairs, retry, MAI, HICC end to end
+├── test_config_flow.py         # setup, duplicates, reconfigure, every options page, Friday add/edit/remove
+├── test_migration.py           # v1/v2 → v3, unique_id collisions, migrate_options()
+├── test_sensor.py              # legacy keys, translation keys, groups, Friday devices and cleanup
+├── test_services.py            # get_prayer_times
+├── test_derived.py             # compute_derived table-driven
+├── test_friday.py / test_iqamah.py / test_hijri.py / test_special_dates.py
+├── test_icci_timetable.py      # raw rows, SHA-256, DST rule, Midnight, corrupt file
+├── test_registry.py / test_translations.py / test_manifest.py / test_diagnostics.py
+└── api_providers/              # test_base, test_calculated, test_dpt, test_mai
 ```
 
-## Configuration Constants
-
-**Source Types**: `calculated`, `ireland`
-**Standard Methods**: isna, mwl, karachi, makkah, egypt, tehran, gulf, etc.
-**Ireland Methods**: ie-icci, ie-mcnd, ie-hicc, ie-sdic
+Time is controlled with the `freezer` fixture; `FROZEN_NOW` is 2026-10-20 11:00 UTC (12:00 Irish time). Use `advance(hass, freezer, delta)` to trigger timers: the coordinator's interval refresh is a background task, so a plain `async_block_till_done()` is not enough. Move the clock a few seconds past an interval boundary.
 
 ## Dependencies
 
-**Runtime**: `prayer-times-calculator`, `hijri-converter`, `aiohttp` (from HA)
-**Dev**: `homeassistant`, `pytest-homeassistant-custom-component`, `ruff`, `pre-commit`
+**Runtime**: `prayer-times-calculator-offline==1.0.3`, `hijridate==2.3.0` (aiohttp comes from Home Assistant)
+**Dev**: `homeassistant>=2025.2.4`, `pytest-homeassistant-custom-component>=0.13.214`, `ruff==0.17.1`, `pre-commit`, `codespell`, `yamllint`

@@ -5,50 +5,99 @@
 [![License][license-shield]](LICENSE)
 [![Downloads][downloads-shield]][downloads]
 
-Muslim Prayer Companion is a Home Assistant Community Store (HACS) integration that provides accurate prayer times, Iqamah times, Hijri calendar information, and Islamic companion features. Supports **multiple locations/mosques** simultaneously with a clean provider-based architecture.
+Muslim Prayer Companion is a Home Assistant Community Store (HACS) integration for prayer times, Iqamah times, Friday prayers, the Hijri calendar and Islamic companion features. Times come either from a calculation for any location in the world (23 methods, fully offline) or from an Irish mosque's own published timetable. Several locations and mosques can be set up side by side.
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
+- [Supported sources](#supported-sources)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Sensors Reference](#sensors-reference)
-- [Sensor Output Formats](#sensor-output-formats)
-- [Automation Examples](#automation-examples)
-- [Architecture](#architecture)
-- [Creating Custom API Providers](#creating-custom-api-providers)
+- [Settings](#settings)
+- [Friday prayers](#friday-prayers)
+- [Iqamah times](#iqamah-times)
+- [Hijri date and Imsak](#hijri-date-and-imsak)
+- [Data sources, fallback and Repairs](#data-sources-fallback-and-repairs)
+- [Sensors reference](#sensors-reference)
+- [Events](#events)
+- [Action: get_prayer_times](#action-get_prayer_times)
+- [Upgrading from 3.0.x](#upgrading-from-30x)
+- [Add your mosque](#add-your-mosque)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
 ## Features
 
-### Core Features
-
-- **Accurate Prayer Times** - Calculate prayer times for any location worldwide
-- **Multiple Calculation Methods** - ISNA, MWL, Makkah, Egypt, and 10+ more
-- **Iqamah Times** - Configurable offset-based or API-fetched congregation times
-- **Hijri Calendar** - Full Islamic date information with month names
-- **Next Prayer Tracking** - Always know which prayer is coming up
-
-### New in v3.0.0
-
-- **Multi-Instance Support** - Add multiple locations/mosques simultaneously
-- **Countdown Sensors** - "Asr in 45 minutes" and minutes until next prayer
-- **Qibla Direction** - Compass bearing to Mecca from your location
-- **Jumu'a (Friday) Prayer** - Dedicated Friday prayer time sensor
-- **Special Night Detection** - Laylatul Qadr, Laylatul Bara'ah, etc.
-- **Ramadan Detection** - Automatic detection of Ramadan month
-- **Ireland Mosque APIs** - Direct integration with ICCI, MCND, HICC, SDIC
+- **Prayer times for any location**, calculated offline with 23 conventions (ISNA, MWL, Umm al-Qura, Egypt, Karachi, Moonsighting Committee, Diyanet, JAKIM and more).
+- **Irish mosque timetables**: Islamic Cultural Centre of Ireland (ICCI), Muslim Community North Dublin (MCND), Hansfield Islamic Cultural Centre (HICC), South Dublin Islamic Centre (SDIC) and the Muslim Association of Ireland in Tallaght (MAI), read from each mosque's own published source.
+- **Friday prayers**: track the Jumu'ah times of several mosques at once, published automatically where the mosque provides them or entered by hand, with a device and two sensors per mosque.
+- **Iqamah times**: fixed offsets, the times published by the mosque, a custom JSON API, or off.
+- **Hijri calendar**: offline conversion, adjustable by up to two days for local moon sighting, with the option to change the Hijri day at Maghrib.
+- **Ramadan and special dates**: Ramadan day, days until Ramadan, Imsak, Iftar, special nights, upcoming Islamic event.
+- **Live countdown**: next prayer, minutes to go and the current prayer period, recomputed every minute without any network traffic.
+- **Events and an action** for automations: an event at every prayer, Iqamah, Imsak and Jumu'ah time, and `get_prayer_times` for timetables of up to 366 days.
+- **Never silent, never unavailable**: if a mosque source fails, calculated times take over, the `source` attribute says so and a Repairs issue is opened until the source recovers.
+- **Multiple entries**, each with its own device, settings and sensors. Entity IDs are unchanged since version 2.x.
+- **English and Arabic** user interface, including entity names.
+- **Diagnostics** download from the entry page (coordinates redacted).
 
 ### Platforms
 
-| Platform | Description                                                             |
-| -------- | ----------------------------------------------------------------------- |
-| `sensor` | 30+ sensors for prayer times, Iqamah, Hijri dates, and Islamic features |
+| Platform | Description                                                                          |
+| -------- | ------------------------------------------------------------------------------------ |
+| `sensor` | Prayer times, Iqamah, Friday prayers, Hijri date, countdown, Qibla and special dates |
+
+---
+
+## Supported sources
+
+### Irish mosques
+
+| Method    | Mosque                                         | Source                                                                                                                                                                                                                                         | Credit                                                        |
+| --------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `ie-icci` | Islamic Cultural Centre of Ireland, Clonskeagh | ICCI's perpetual timetable, bundled with the integration from the [Wayback Machine snapshot of 2 August 2022](https://web.archive.org/web/20220802110619id_/https://islamireland.ie/api/timetable/) of the former JSON API. No network needed. | [Islamic Cultural Centre of Ireland](https://islamireland.ie) |
+| `ie-mcnd` | Muslim Community North Dublin                  | Daily Prayer Time WordPress plugin JSON API (prayer, Iqamah and Jumu'ah times)                                                                                                                                                                 | [Muslim Community North Dublin](https://mcnd.ie)              |
+| `ie-hicc` | Hansfield Islamic Cultural Centre              | Daily Prayer Time WordPress plugin JSON API (prayer, Iqamah and Jumu'ah times)                                                                                                                                                                 | [Hansfield Islamic Cultural Centre](https://hicc.ie)          |
+| `ie-sdic` | South Dublin Islamic Centre                    | Daily Prayer Time WordPress plugin JSON API (prayer, Iqamah and Jumu'ah times)                                                                                                                                                                 | [South Dublin Islamic Centre](https://sdic.ie)                |
+| `ie-mai`  | Muslim Association of Ireland, Tallaght        | Daily times read from the public website (today only; Jumu'ah times are entered manually)                                                                                                                                                      | [Muslim Association of Ireland](https://maionline.ie)         |
+
+All mosque data remains the property of the respective mosques. The mosque list lives in `custom_components/muslim_prayer_companion/data/mosques.json`; see [Add your mosque](#add-your-mosque).
+
+### Calculation methods
+
+Calculations use [prayer-times-calculator-offline](https://pypi.org/project/prayer-times-calculator-offline/), the same library as Home Assistant's core Islamic Prayer Times integration. Nothing is fetched from the internet.
+
+| Method         | Convention                                    |
+| -------------- | --------------------------------------------- |
+| `isna`         | Islamic Society of North America (default)    |
+| `mwl`          | Muslim World League                           |
+| `makkah`       | Umm al-Qura University, Makkah                |
+| `egypt`        | Egyptian General Authority of Survey          |
+| `karachi`      | University of Islamic Sciences, Karachi       |
+| `tehran`       | Institute of Geophysics, University of Tehran |
+| `jafari`       | Shia Ithna-Ashari (Jafari)                    |
+| `gulf`         | Gulf Region                                   |
+| `kuwait`       | Kuwait                                        |
+| `qatar`        | Qatar                                         |
+| `singapore`    | Majlis Ugama Islam Singapura                  |
+| `france`       | Union des Organisations Islamiques de France  |
+| `turkey`       | Diyanet İşleri Başkanlığı, Turkey             |
+| `russia`       | Spiritual Administration of Muslims of Russia |
+| `moonsighting` | Moonsighting Committee Worldwide              |
+| `dubai`        | Dubai                                         |
+| `jakim`        | JAKIM, Malaysia                               |
+| `tunisia`      | Tunisia                                       |
+| `algeria`      | Algeria                                       |
+| `kemenag`      | Kementerian Agama, Indonesia                  |
+| `morocco`      | Morocco                                       |
+| `portugal`     | Comunidade Islâmica de Lisboa, Portugal       |
+| `jordan`       | Jordan                                        |
 
 ---
 
@@ -56,826 +105,425 @@ Muslim Prayer Companion is a Home Assistant Community Store (HACS) integration t
 
 ### Prerequisites
 
-- [Home Assistant](https://www.home-assistant.io/) 2024.1.0 or newer
-- [HACS](https://hacs.xyz/) installed
+- [Home Assistant](https://www.home-assistant.io/) 2025.2.4 or newer
+- [HACS](https://hacs.xyz/) (for the HACS route)
 
-### Installation Steps
+### With HACS
 
-1. **Open HACS** in your Home Assistant instance
+1. Open HACS in Home Assistant.
+2. Click the three dots (⋮) → **Custom repositories**.
+3. Add `https://github.com/amaharek/muslim_prayer_companion` with category **Integration**.
+4. Search for **Muslim Prayer Companion**, click **Download**.
+5. Restart Home Assistant.
 
-2. **Add Custom Repository:**
-   - Click the three dots (⋮) → **Custom repositories**
-   - Add URL: `https://github.com/amaharek/muslim_prayer_companion`
-   - Category: **Integration**
-   - Click **Add**
+### Manually
 
-3. **Install the Integration:**
-   - Search for "Muslim Prayer Companion" in HACS
-   - Click **Download**
-
-4. **Restart Home Assistant**
-
-5. **Add the Integration:**
-   - Go to **Settings → Devices & Services → Add Integration**
-   - Search for "Muslim Prayer Companion"
-   - Follow the setup wizard
+1. Download the `muslim_prayer_companion.zip` asset of the [latest release][releases].
+2. Unpack it into `config/custom_components/muslim_prayer_companion/` so that `manifest.json` ends up in that folder.
+3. Restart Home Assistant.
 
 ---
 
 ## Configuration
 
-### Multi-Step Setup Wizard
+Go to **Settings → Devices & services → Add integration** and search for **Muslim Prayer Companion**. The setup has two or three steps:
 
-The integration uses a 3-step configuration flow:
+1. **Prayer times source**: calculate from a location, or use an Irish mosque's published timetable.
+2. **Irish mosque**: pick the mosque. The list is ordered by distance from your Home Assistant location and the nearest one is preselected. The optional name (default: the mosque's short name, for example `ICCI`) is used in entity names.
+   **Location** (calculated source): pick the coordinates on the map (default: your Home Assistant location) and a name such as `Home`.
+3. **Calculation method** (calculated source only).
 
-#### Step 1: Choose Source Type
+Each entry gets a device named `Muslim Prayer Companion - <name>` with all of its sensors. One entry per mosque and one entry per location can exist; adding the same mosque twice is refused.
 
-| Option                         | Description                                         |
-| ------------------------------ | --------------------------------------------------- |
-| **Calculate from coordinates** | Use mathematical calculation based on your location |
-| **Ireland Mosque API**         | Fetch times directly from Irish mosque websites     |
-
-#### Step 2: Location Configuration
-
-| Option                          | Description                                              |
-| ------------------------------- | -------------------------------------------------------- |
-| **Use Home Assistant location** | Use coordinates from your HA settings                    |
-| **Custom coordinates**          | Enter specific latitude/longitude                        |
-| **Location name**               | Friendly name for this location (e.g., "Home", "Office") |
-
-#### Step 3: Calculation Method
-
-Select your preferred calculation method (see table below).
-
-### Calculation Methods
-
-#### Standard Methods (Worldwide)
-
-| Method      | Organization                            | Fajr Angle | Isha Angle           |
-| ----------- | --------------------------------------- | ---------- | -------------------- |
-| `isna`      | Islamic Society of North America        | 15°        | 15°                  |
-| `mwl`       | Muslim World League                     | 18°        | 17°                  |
-| `makkah`    | Umm al-Qura University, Makkah          | 18.5°      | 90 min after Maghrib |
-| `egypt`     | Egyptian General Authority of Survey    | 19.5°      | 17.5°                |
-| `karachi`   | University of Islamic Sciences, Karachi | 18°        | 18°                  |
-| `tehran`    | Institute of Geophysics, Tehran         | 17.7°      | 14°                  |
-| `jafari`    | Shia Ithna-Ashari                       | 16°        | 14°                  |
-| `gulf`      | Gulf Region                             | 19.5°      | 90 min after Maghrib |
-| `kuwait`    | Kuwait                                  | 18°        | 17.5°                |
-| `qatar`     | Qatar                                   | 18°        | 90 min after Maghrib |
-| `singapore` | Singapore                               | 20°        | 18°                  |
-| `france`    | France                                  | 12°        | 12°                  |
-| `turkey`    | Turkey                                  | 18°        | 17°                  |
-| `russia`    | Russia                                  | 16°        | 15°                  |
-
-#### Ireland Mosque APIs
-
-| Method    | Mosque                             | Features              |
-| --------- | ---------------------------------- | --------------------- |
-| `ie-icci` | Islamic Cultural Centre of Ireland | Prayer times          |
-| `ie-mcnd` | Muslim Community North Dublin      | Prayer + Iqamah times |
-| `ie-hicc` | Hansfield Islamic Cultural Centre  | Prayer + Iqamah times |
-| `ie-sdic` | South Dublin Islamic Centre        | Prayer + Iqamah times |
-
-### Options (After Setup)
-
-Go to **Settings → Devices & Services → Muslim Prayer Companion → Configure**:
-
-| Option                       | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| **Calculation method**       | Change the prayer calculation method                |
-| **Iqamah method**            | `offset` (add minutes to prayer time) or `disabled` |
-| **Enable Hijri sensors**     | Show/hide Hijri date sensors                        |
-| **Enable countdown sensors** | Show/hide countdown sensors                         |
+Entity IDs follow `sensor.muslim_prayer_companion_<name>_<sensor>`, for example `sensor.muslim_prayer_companion_icci_maghrib`.
 
 ---
 
-## Sensors Reference
+## Settings
 
-### Prayer Time Sensors
+Open the entry under **Settings → Devices & services → Muslim Prayer Companion** and click **Configure**. The menu has five pages; every page saves on its own and reloads the entry.
 
-| Sensor         | Entity ID                                         | Device Class | Description           |
-| -------------- | ------------------------------------------------- | ------------ | --------------------- |
-| Fajr Prayer    | `sensor.muslim_prayer_companion_*_fajr_prayer`    | `timestamp`  | Dawn prayer time      |
-| Sunrise        | `sensor.muslim_prayer_companion_*_sunrise_time`   | `timestamp`  | Sunrise time          |
-| Dhuhr Prayer   | `sensor.muslim_prayer_companion_*_dhuhr_prayer`   | `timestamp`  | Noon prayer time      |
-| Asr Prayer     | `sensor.muslim_prayer_companion_*_asr_prayer`     | `timestamp`  | Afternoon prayer time |
-| Maghrib Prayer | `sensor.muslim_prayer_companion_*_maghrib_prayer` | `timestamp`  | Sunset prayer time    |
-| Isha Prayer    | `sensor.muslim_prayer_companion_*_isha_prayer`    | `timestamp`  | Night prayer time     |
-| Midnight       | `sensor.muslim_prayer_companion_*_midnight_time`  | `timestamp`  | Islamic midnight      |
+| Page                     | What it sets                                                                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Calculation method**   | The convention used for calculated entries (not shown for mosque entries).                                                                                                        |
+| **Iqamah times**         | Where Iqamah times come from (offsets, the mosque, a custom API, or disabled), the custom API URL and the per-prayer offsets in minutes.                                          |
+| **Friday prayers**       | The list of mosques whose Jumu'ah times are tracked: add, edit or remove mosques.                                                                                                 |
+| **Hijri date and Imsak** | Hijri adjustment (−2 to +2 days), whether the Hijri day changes at Maghrib, and how many minutes before Fajr the Imsak sensor is set.                                             |
+| **Sensors and display**  | Which sensor groups exist (Iqamah, Hijri, countdown, Qibla, special dates, Friday), the countdown format (`Asr in 45 minutes`, `00:45` or `45`) and the prayer window in minutes. |
 
-### Iqamah Time Sensors
+To change the mosque, the location or the source itself, use **Reconfigure** in the entry's three-dot menu. Your other settings are kept, and the entry's unique ID follows the new mosque or location.
 
-| Sensor         | Entity ID                                         | Device Class | Description               |
-| -------------- | ------------------------------------------------- | ------------ | ------------------------- |
-| Iqamah Fajr    | `sensor.muslim_prayer_companion_*_iqamah_fajr`    | `timestamp`  | Fajr congregation time    |
-| Iqamah Dhuhr   | `sensor.muslim_prayer_companion_*_iqamah_dhuhr`   | `timestamp`  | Dhuhr congregation time   |
-| Iqamah Asr     | `sensor.muslim_prayer_companion_*_iqamah_asr`     | `timestamp`  | Asr congregation time     |
-| Iqamah Maghrib | `sensor.muslim_prayer_companion_*_iqamah_maghrib` | `timestamp`  | Maghrib congregation time |
-| Iqamah Isha    | `sensor.muslim_prayer_companion_*_iqamah_isha`    | `timestamp`  | Isha congregation time    |
-
-### Hijri Date Sensors
-
-| Sensor              | Entity ID                                              | Description                |
-| ------------------- | ------------------------------------------------------ | -------------------------- |
-| Hijri Date          | `sensor.muslim_prayer_companion_*_hijri_date`          | Date in DD-MM-YYYY format  |
-| Hijri Day           | `sensor.muslim_prayer_companion_*_hijri_day`           | Day number (1-30)          |
-| Hijri Month Number  | `sensor.muslim_prayer_companion_*_hijri_month_number`  | Month number (1-12)        |
-| Hijri Month         | `sensor.muslim_prayer_companion_*_hijri_month`         | Month name (Ramadan, etc.) |
-| Hijri Year          | `sensor.muslim_prayer_companion_*_hijri_year`          | Year (1446, etc.)          |
-| Hijri Date Readable | `sensor.muslim_prayer_companion_*_hijri_date_readable` | "15-Ramadan-1446"          |
-| Hijri Day and Month | `sensor.muslim_prayer_companion_*_hijri_day_and_month` | "15-Ramadan"               |
-
-### Next Prayer Sensors
-
-| Sensor                | Entity ID                                                | Device Class | Description               |
-| --------------------- | -------------------------------------------------------- | ------------ | ------------------------- |
-| Next Prayer           | `sensor.muslim_prayer_companion_*_next_prayer`           | `timestamp`  | Time of next prayer       |
-| Next Prayer Countdown | `sensor.muslim_prayer_companion_*_next_prayer_countdown` | -            | "Asr in 45 minutes"       |
-| Next Prayer Minutes   | `sensor.muslim_prayer_companion_*_next_prayer_minutes`   | -            | Minutes until next prayer |
-
-### Additional Sensors
-
-| Sensor                | Entity ID                                                | Type        | Description                     |
-| --------------------- | -------------------------------------------------------- | ----------- | ------------------------------- |
-| Jumu'a Time           | `sensor.muslim_prayer_companion_*_jumu_a_time`           | `timestamp` | Friday prayer (only on Fridays) |
-| Current Prayer Period | `sensor.muslim_prayer_companion_*_current_prayer_period` | `string`    | "Between Dhuhr and Asr"         |
-| Qibla Direction       | `sensor.muslim_prayer_companion_*_qibla_direction`       | `number`    | Degrees from North (0-360°)     |
-| Location              | `sensor.muslim_prayer_companion_*_location`              | `string`    | Location name                   |
-| Is Ramadan            | `sensor.muslim_prayer_companion_*_is_ramadan`            | `boolean`   | "true" during Ramadan           |
-| Is Friday             | `sensor.muslim_prayer_companion_*_is_friday`             | `boolean`   | "true" on Fridays               |
-| Special Night         | `sensor.muslim_prayer_companion_*_special_night`         | `string`    | Laylatul Qadr, etc.             |
+The **prayer window** controls the _Current prayer period_ sensor: for that many minutes after a prayer starts the sensor shows the prayer itself (`Dhuhr`) instead of `Between Dhuhr and Asr`. Set it to 0 to disable.
 
 ---
 
-## Sensor Output Formats
+## Friday prayers
 
-### Timestamp Sensors (Prayer Times, Iqamah Times)
+The **Friday prayers** page keeps a list of mosques, up to ten per entry. Each mosque has:
 
-**Format:** ISO 8601 UTC datetime string
+- a **name** (shown as the device name),
+- a **source**: _Entered manually_, or a registered mosque that publishes its Jumu'ah times (MCND, HICC, SDIC). Mosques that do not publish them (ICCI, MAI) can be chosen as presets but their times are entered by hand,
+- a first and an optional second **Jumu'ah time** (`HH:MM`), used as the times for manual mosques and as a fallback when a published list is empty,
+- an optional **label** per session, for example _Men only_ or _Arabic khutbah_.
 
-```
-2024-02-10T05:30:00+00:00
-```
+An Irish mosque entry starts with its own mosque in the list. Each mosque in the list becomes a device with two timestamp sensors, **Jumu'ah 1** and **Jumu'ah 2**, pointing at the next Friday occurrence, so they are available every day of the week. Their attributes are `mosque_name`, `label`, `source` and `times_from` (`api` or `manual`).
 
-**Device Class:** `timestamp`
+Deleting a Friday mosque's device from the device page removes the mosque from the list. Renaming a mosque keeps its sensors: the entity IDs are derived from a slug that is fixed when the mosque is added.
 
-**Home Assistant Display:** Automatically converted to your local timezone
-
-**Example States:**
-
-```yaml
-sensor.muslim_prayer_companion_home_fajr_prayer:
-  state: "2024-02-10T05:30:00+00:00"
-  attributes:
-    device_class: timestamp
-    friendly_name: "Fajr Prayer"
-    icon: mdi:weather-sunset-up
-```
-
-### Next Prayer Sensor
-
-**Format:** ISO 8601 UTC datetime + attributes
-
-```yaml
-sensor.muslim_prayer_companion_home_next_prayer:
-  state: "2024-02-10T15:30:00+00:00"
-  attributes:
-    prayer: "Asr" # Name of the next prayer
-    device_class: timestamp
-    friendly_name: "Next Prayer"
-```
-
-### Countdown Sensors
-
-**Next Prayer Countdown:**
-
-```yaml
-sensor.muslim_prayer_companion_home_next_prayer_countdown:
-  state: "Asr in 45 minutes"
-  attributes:
-    friendly_name: "Next Prayer Countdown"
-    icon: mdi:timer-outline
-```
-
-**Next Prayer Minutes:**
-
-```yaml
-sensor.muslim_prayer_companion_home_next_prayer_minutes:
-  state: 45
-  attributes:
-    unit_of_measurement: "min"
-    state_class: measurement
-    friendly_name: "Next Prayer Minutes"
-```
-
-### Hijri Date Sensors
-
-**Hijri Date (DD-MM-YYYY):**
-
-```yaml
-sensor.muslim_prayer_companion_home_hijri_date:
-  state: "15-09-1446"
-  attributes:
-    friendly_name: "Hijri Date"
-    icon: mdi:calendar-islamic
-```
-
-**Hijri Month:**
-
-```yaml
-sensor.muslim_prayer_companion_home_hijri_month:
-  state: "Ramadan"
-  attributes:
-    friendly_name: "Hijri Month"
-```
-
-**Hijri Date Readable:**
-
-```yaml
-sensor.muslim_prayer_companion_home_hijri_date_readable:
-  state: "15-Ramadan-1446"
-  attributes:
-    is_ramadan: true
-    friendly_name: "Hijri Date Readable"
-```
-
-### Qibla Direction Sensor
-
-**Format:** Degrees from North (0-360)
-
-```yaml
-sensor.muslim_prayer_companion_home_qibla_direction:
-  state: 119.5
-  attributes:
-    compass_direction: "ESE" # Compass direction name
-    unit_of_measurement: "°"
-    state_class: measurement
-    friendly_name: "Qibla Direction"
-```
-
-### Boolean Sensors
-
-**Format:** String "true" or "false"
-
-```yaml
-sensor.muslim_prayer_companion_home_is_ramadan:
-  state: "true"
-  attributes:
-    friendly_name: "Is Ramadan"
-    icon: mdi:moon-waning-crescent
-
-sensor.muslim_prayer_companion_home_is_friday:
-  state: "false"
-  attributes:
-    friendly_name: "Is Friday"
-```
-
-### Special Night Sensor
-
-**Format:** String (empty when no special night)
-
-```yaml
-# During Laylatul Qadr
-sensor.muslim_prayer_companion_home_special_night:
-  state: "Possible Laylatul Qadr (Night 27)"
-
-# Normal nights
-sensor.muslim_prayer_companion_home_special_night:
-  state: ""
-```
-
-**Possible values:**
-
-- `"Possible Laylatul Qadr (Night 21/23/25/27/29)"` - Last 10 nights of Ramadan
-- `"Night before Eid al-Fitr"` - 29th Ramadan
-- `"Night of Arafah"` - 9th Dhul Hijjah
-- `"Laylatul Bara'ah (Night of Forgiveness)"` - 15th Sha'ban
-- `"Laylatul Mi'raj (Night Journey)"` - 27th Rajab
-- `"Night before Ashura"` - 9th Muharram
-- `""` - No special night
-
-### Current Prayer Period Sensor
-
-**Format:** Descriptive string
-
-```yaml
-sensor.muslim_prayer_companion_home_current_prayer_period:
-  state: "Between Dhuhr and Asr"
-```
-
-**Possible values:**
-
-- `"Before Fajr"`
-- `"Between Fajr and Sunrise"`
-- `"Between Sunrise and Dhuhr"`
-- `"Between Dhuhr and Asr"`
-- `"Between Asr and Maghrib"`
-- `"Between Maghrib and Isha"`
-- `"After Isha"`
+The older `juma_time` sensor is kept as an alias: it shows the mosque's published first Jumu'ah, else the first mosque in the Friday list, else next Friday's Dhuhr.
 
 ---
 
-## Automation Examples
+## Iqamah times
 
-### Play Athan at Prayer Time
+| Method                              | Behaviour                                                                                                                                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Fixed offsets after each prayer** | Prayer start plus the configured minutes (defaults: Fajr 20, Dhuhr 15, Asr 15, Maghrib 10, Isha 15).                                                                                                |
+| **Published by the mosque**         | The jamah times from the mosque's API (MCND, HICC, SDIC; the default for those mosques). Offsets fill any gaps.                                                                                     |
+| **Custom JSON API**                 | A URL returning JSON such as `{"Fajr": "06:30", "Dhuhr": "13:30", ...}` (the `*_jamah` keys of the Daily Prayer Time plugin are also understood). The last good values are kept when the URL fails. |
+| **Disabled**                        | No Iqamah sensors.                                                                                                                                                                                  |
+
+Iqamah sensors keep showing today's Iqamah while it is still ahead, even after the prayer itself has started, and then move to the next day. Their `source` attribute is `offset`, `mosque` or `api`.
+
+---
+
+## Hijri date and Imsak
+
+Hijri dates are converted offline with [hijridate](https://pypi.org/project/hijridate/) (Umm al-Qura calendar). Two settings adapt it to local practice:
+
+- **Hijri date adjustment** shifts the date by −2 to +2 days to follow your community's moon-sighting announcements. Ramadan, special nights and the upcoming event follow the adjusted date.
+- **Hijri day changes at Maghrib** advances the Hijri date (and everything derived from it) at Maghrib instead of midnight.
+
+**Imsak** is Fajr minus a configurable number of minutes (default 10). **Iftar** equals Maghrib and is only set during Ramadan.
+
+---
+
+## Data sources, fallback and Repairs
+
+Every prayer-time sensor carries a `source` attribute:
+
+| `source`                           | Meaning                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| `icci-timetable`                   | Bundled ICCI perpetual timetable                                                  |
+| `mcnd-api`, `hicc-api`, `sdic-api` | The mosque's Daily Prayer Time API                                                |
+| `mai-website`                      | Today's times read from maionline.ie                                              |
+| `calculated:<method>`              | Calculated for the entry's coordinates, e.g. `calculated:isna`                    |
+| `calculated-fallback:isna`         | A mosque source failed; ISNA times for the mosque's coordinates are shown instead |
+
+When a mosque source cannot be read (dead endpoint, HTML instead of JSON, timeout, changed page layout), the entry does not go unavailable: it falls back to calculated ISNA times for the same coordinates, logs one warning, and opens a **Repairs** issue (**Settings → System → Repairs**) naming the mosque, the URL and the error. The source is tried again every hour; when it works, the issue closes itself and the `source` attribute changes back. If even the calculation fails, today's last good times are kept, and a new entry retries with increasing delays.
+
+Mosque sources are also checked once a week by a GitHub Action in this repository, which opens an issue when one of them breaks.
+
+### ICCI timetable details
+
+The ICCI table is perpetual (366 days, no year) and uses summer time for all dates from 1 April to 31 October and GMT otherwise, whatever the real clock change date is. The integration converts each day with that fixed rule, so the few days each year between the real DST change and the table's switch are shifted by one hour. Midnight is the midpoint of Maghrib and the next day's sunrise. The bundled file is verified against a checksum in the tests and can be rebuilt with `scripts/build_icci_timetable.py`.
+
+---
+
+## Sensors reference
+
+Unique IDs are `{key}_{entry_id}` and have not changed since version 2.x, so history, dashboards and automations survive upgrades. Timestamp sensors hold ISO 8601 UTC values, which Home Assistant shows in your local time. Boolean sensors are strings `"true"`/`"false"`.
+
+### Prayer times (always created)
+
+| Key                     | Entity name           | Class       | Description                                                                             |
+| ----------------------- | --------------------- | ----------- | --------------------------------------------------------------------------------------- |
+| `Fajr`                  | Fajr                  | `timestamp` | Next Fajr (today's until it passes, then tomorrow's)                                    |
+| `Sunrise`               | Sunrise               | `timestamp` | Next sunrise                                                                            |
+| `Dhuhr`                 | Dhuhr                 | `timestamp` | Next Dhuhr                                                                              |
+| `Asr`                   | Asr                   | `timestamp` | Next Asr                                                                                |
+| `Maghrib`               | Maghrib               | `timestamp` | Next Maghrib                                                                            |
+| `Isha`                  | Isha                  | `timestamp` | Next Isha                                                                               |
+| `Midnight`              | Midnight              | `timestamp` | Islamic midnight (midpoint of Maghrib and the next sunrise)                             |
+| `next_prayer`           | Next prayer           | `timestamp` | Time of the next of the five prayers; attribute `prayer` holds its name                 |
+| `current_prayer_period` | Current prayer period | text        | `Before Fajr`, `<Prayer>` during the prayer window, `Between <X> and <Y>`, `After Isha` |
+| `location_name`         | Location              | text        | The entry's name                                                                        |
+
+Attributes: `source` on every timestamp above.
+
+### Countdown
+
+| Key                     | Entity name            | Description                                           |
+| ----------------------- | ---------------------- | ----------------------------------------------------- |
+| `next_prayer_countdown` | Next prayer countdown  | `Asr in 45 minutes`, `00:45` or `45` (per the format) |
+| `next_prayer_minutes`   | Minutes to next prayer | Whole minutes, unit `min`                             |
+
+### Hijri date
+
+| Key                        | Entity name           | Example                                           |
+| -------------------------- | --------------------- | ------------------------------------------------- |
+| `hijri_date`               | Hijri date            | `09-05-1448`                                      |
+| `hijri_day`                | Hijri day             | `9`                                               |
+| `hijri_month_num`          | Hijri month number    | `5`                                               |
+| `hijri_month_readable`     | Hijri month           | `Jumada al-Awwal`                                 |
+| `hijri_year`               | Hijri year            | `1448`                                            |
+| `hijri_date_readable`      | Hijri date (readable) | `9-Jumada al-Awwal-1448` (attribute `is_ramadan`) |
+| `hijri_day_month_readable` | Hijri day and month   | `9-Jumada al-Awwal`                               |
+
+### Iqamah
+
+| Key              | Entity name    | Class       |
+| ---------------- | -------------- | ----------- |
+| `iqamah_Fajr`    | Iqamah Fajr    | `timestamp` |
+| `iqamah_Dhuhr`   | Iqamah Dhuhr   | `timestamp` |
+| `iqamah_Asr`     | Iqamah Asr     | `timestamp` |
+| `iqamah_Maghrib` | Iqamah Maghrib | `timestamp` |
+| `iqamah_Isha`    | Iqamah Isha    | `timestamp` |
+
+Attribute: `source` (`offset`, `mosque` or `api`).
+
+### Qibla
+
+| Key               | Entity name     | Description                                                              |
+| ----------------- | --------------- | ------------------------------------------------------------------------ |
+| `qibla_direction` | Qibla direction | Bearing to Makkah in degrees; attribute `compass_direction` (e.g. `ESE`) |
+
+### Special dates
+
+| Key                      | Entity name            | Class        | Description                                                                                          |
+| ------------------------ | ---------------------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `is_ramadan`             | Ramadan                | text         | `true` during Ramadan                                                                                |
+| `is_friday`              | Friday                 | text         | `true` on Fridays (local date)                                                                       |
+| `special_night`          | Special night          | text         | Laylatul Qadr nights, night before Eid al-Fitr, Arafah, Bara'ah, Mi'raj, Ashura; `unknown` otherwise |
+| `ramadan_day`            | Ramadan day            | number       | 1–30 during Ramadan, `unknown` otherwise                                                             |
+| `days_until_ramadan`     | Days until Ramadan     | number (`d`) | Days to the next 1 Ramadan, `unknown` during Ramadan                                                 |
+| `upcoming_islamic_event` | Upcoming Islamic event | text         | Next event name; attributes `date` and `days_until`                                                  |
+| `imsak`                  | Imsak                  | `timestamp`  | Fajr minus the configured minutes                                                                    |
+| `iftar`                  | Iftar                  | `timestamp`  | Maghrib, during Ramadan only                                                                         |
+
+### Friday
+
+| Key                      | Entity name | Class       | Description                                                                                        |
+| ------------------------ | ----------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| `juma_time`              | Jumu'ah     | `timestamp` | Compatibility alias: next Friday's first Jumu'ah (published, else first Friday mosque, else Dhuhr) |
+| `friday_<slug>_jumuah_1` | Jumu'ah 1   | `timestamp` | One per Friday mosque, under the mosque's own device                                               |
+| `friday_<slug>_jumuah_2` | Jumu'ah 2   | `timestamp` | Second session; `unknown` when the mosque has one                                                  |
+
+Friday sensor attributes: `mosque_name`, `label`, `source`, `times_from`.
+
+---
+
+## Events
+
+The integration fires `muslim_prayer_companion_event` on the Home Assistant event bus at the exact minute of every prayer time, Iqamah time, Imsak and Jumu'ah time.
+
+| Field                                | Present for        | Value                                                                                                                |
+| ------------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `type`                               | all                | `prayer`, `iqamah`, `imsak` or `jumuah`                                                                              |
+| `entry_id`                           | all                | The config entry                                                                                                     |
+| `location_name`                      | all                | The entry's name                                                                                                     |
+| `time`                               | all                | The instant, ISO 8601 UTC                                                                                            |
+| `prayer`                             | `prayer`, `iqamah` | `Fajr`, `Sunrise`, `Dhuhr`, `Asr`, `Maghrib`, `Isha` or `Midnight` (`prayer` type); the five prayers (`iqamah` type) |
+| `mosque`, `slug`, `session`, `label` | `jumuah`           | Friday mosque name and slug, session `1` or `2`, the session's label                                                 |
+
+### Play the adhan at each prayer
 
 ```yaml
 automation:
-  - alias: "Play Athan at Fajr"
-    trigger:
-      - platform: state
-        entity_id: sensor.muslim_prayer_companion_home_fajr_prayer
-    condition:
+  - alias: "Play adhan"
+    triggers:
+      - trigger: event
+        event_type: muslim_prayer_companion_event
+        event_data:
+          type: prayer
+    conditions:
       - condition: template
-        value_template: "{{ now().strftime('%H:%M') == states('sensor.muslim_prayer_companion_home_fajr_prayer') | as_timestamp | timestamp_custom('%H:%M') }}"
-    action:
-      - service: media_player.play_media
+        value_template: "{{ trigger.event.data.prayer in ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] }}"
+    actions:
+      - action: media_player.play_media
         target:
           entity_id: media_player.living_room_speaker
         data:
-          media_content_id: "http://your-server/athan.mp3"
-          media_content_type: "music"
+          media_content_id: "http://your-server/adhan.mp3"
+          media_content_type: music
 ```
 
-### Pre-Prayer Notification (15 Minutes Before)
+### Notify 10 minutes before the next prayer
 
 ```yaml
 automation:
-  - alias: "Notify 15 Minutes Before Prayer"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.muslim_prayer_companion_home_next_prayer_minutes
-        below: 16
-        above: 14
-    action:
-      - service: notify.mobile_app
+  - alias: "Prayer in 10 minutes"
+    triggers:
+      - trigger: time
+        at:
+          entity_id: sensor.muslim_prayer_companion_home_next_prayer
+          offset: "-00:10:00"
+    actions:
+      - action: notify.mobile_app_my_phone
         data:
-          title: "Prayer Reminder"
-          message: "{{ states('sensor.muslim_prayer_companion_home_next_prayer_countdown') }}"
+          title: "Prayer reminder"
+          message: >-
+            {{ state_attr('sensor.muslim_prayer_companion_home_next_prayer', 'prayer') }}
+            in 10 minutes
 ```
 
-### Dim Lights During Prayer Time
+### Friday reminder
 
 ```yaml
 automation:
-  - alias: "Dim Lights for Prayer"
-    trigger:
-      - platform: time
-        at: sensor.muslim_prayer_companion_home_next_prayer
-    action:
-      - service: light.turn_on
-        target:
-          entity_id: light.prayer_room
+  - alias: "Jumu'ah reminder"
+    triggers:
+      - trigger: event
+        event_type: muslim_prayer_companion_event
+        event_data:
+          type: jumuah
+          session: 1
+    actions:
+      - action: notify.mobile_app_my_phone
         data:
-          brightness_pct: 30
-      - delay:
-          minutes: 15
-      - service: light.turn_on
-        target:
-          entity_id: light.prayer_room
-        data:
-          brightness_pct: 100
+          title: "Jumu'ah"
+          message: >-
+            Jumu'ah is starting at {{ trigger.event.data.mosque }}
+            {% if trigger.event.data.label %}({{ trigger.event.data.label }}){% endif %}
 ```
 
-### Ramadan Suhoor Reminder
+For a reminder before the Jumu'ah, use a time trigger with a negative offset on the mosque's **Jumu'ah 1** sensor, as in the previous example.
+
+---
+
+## Action: get_prayer_times
+
+`muslim_prayer_companion.get_prayer_times` returns the prayer times of one or more days, for example to build a Ramadan timetable card.
+
+| Field             | Required | Description                                              |
+| ----------------- | -------- | -------------------------------------------------------- |
+| `config_entry_id` | no       | The entry to use; defaults to the first configured entry |
+| `date`            | no       | First day (`YYYY-MM-DD`); defaults to today              |
+| `days`            | no       | Number of consecutive days, 1–366 (default 1)            |
+
+Calculated entries and ICCI can answer for any date. The MCND, HICC, SDIC and MAI sources only know today and tomorrow and raise an error for later dates.
 
 ```yaml
-automation:
-  - alias: "Suhoor Reminder"
-    trigger:
-      - platform: template
-        value_template: >
-          {{ states('sensor.muslim_prayer_companion_home_is_ramadan') == 'true' and
-             (as_timestamp(states('sensor.muslim_prayer_companion_home_fajr_prayer')) - as_timestamp(now())) | int < 1800 and
-             (as_timestamp(states('sensor.muslim_prayer_companion_home_fajr_prayer')) - as_timestamp(now())) | int > 1740 }}
-    action:
-      - service: notify.all
-        data:
-          title: "Suhoor Reminder"
-          message: "30 minutes until Fajr. Time to complete Suhoor!"
+action: muslim_prayer_companion.get_prayer_times
+data:
+  config_entry_id: 01ABCDEF0123456789ABCDEFGHIJKL
+  date: "2026-02-18"
+  days: 30
+response_variable: ramadan
 ```
 
-### Friday Jumu'a Reminder
+Response:
 
 ```yaml
-automation:
-  - alias: "Jumu'a Reminder"
-    trigger:
-      - platform: time
-        at: "11:00:00"
-    condition:
-      - condition: state
-        entity_id: sensor.muslim_prayer_companion_home_is_friday
-        state: "true"
-    action:
-      - service: notify.mobile_app
-        data:
-          title: "Jumu'a Today"
-          message: "Friday prayer at {{ states('sensor.muslim_prayer_companion_home_jumu_a_time') | as_timestamp | timestamp_custom('%H:%M') }}"
+location_name: ICCI
+provider: Islamic Cultural Centre of Ireland
+days:
+  - date: "2026-02-18"
+    Fajr: "2026-02-18T05:55:00+00:00"
+    Sunrise: "2026-02-18T07:36:00+00:00"
+    Dhuhr: "2026-02-18T12:41:00+00:00"
+    Asr: "2026-02-18T15:09:00+00:00"
+    Maghrib: "2026-02-18T17:42:00+00:00"
+    Isha: "2026-02-18T19:18:00+00:00"
+    Midnight: "2026-02-19T00:38:00+00:00"
+    Sunset: "2026-02-18T17:42:00+00:00"
+    source: icci-timetable
+  - ...
 ```
 
 ---
 
-## Architecture
+## Upgrading from 3.0.x
 
-### System Overview
+Config entries are migrated automatically to version 3, and entity unique IDs are unchanged, so dashboards and automations keep working. Two behaviour changes are worth knowing:
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Config Flow   │────▶│   Coordinator    │────▶│    Sensors      │
-│  (Multi-step)   │     │  (Per Entry)     │     │  (30+ types)    │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │   API Providers      │
-                    ├──────────────────────┤
-                    │ • CalculatedProvider │
-                    │ • IrelandProvider    │
-                    │ • (Your Custom)      │
-                    └──────────────────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │  Standardized Data   │
-                    ├──────────────────────┤
-                    │ • PrayerTimesData    │
-                    │ • IqamahTimesData    │
-                    │ • MosqueInfo         │
-                    └──────────────────────┘
-```
+- **The calculation method you chose is now applied.** In 3.0.x the method selected in the UI was ignored and every entry effectively showed ICCI times. 4.0.0 honours the stored method (reading options first, as 3.0.x did), so prayer times may change after upgrading. Check the entry's **Configure** menu or **Reconfigure** it.
+- The old _Enable Hijri sensors_ and _Enable countdown sensors_ toggles were stored but never applied; they now disable those sensor groups.
 
-### Data Flow
-
-1. **Configuration**: User configures via multi-step flow (source → location → method)
-2. **Provider Selection**: Coordinator selects appropriate provider based on config
-3. **Data Fetching**: Provider fetches prayer times from API or calculates them
-4. **Normalization**: Raw data is converted to standardized `PrayerTimesData`
-5. **Validation**: Data is validated (times in order, timezone-aware)
-6. **Enhancement**: Coordinator adds Hijri dates, countdown, Qibla direction
-7. **Sensor Update**: Sensors read from coordinator data
-8. **Scheduling**: Next update scheduled for midnight
-
-### Multi-Instance Support
-
-Each config entry creates its own:
-
-- **Coordinator**: Independent data fetching and caching
-- **Device**: Groups all sensors for that location
-- **Sensors**: Unique IDs in format `{sensor_key}_{entry_id}`
-
-This allows:
-
-- Multiple locations (home, office, mosque)
-- Different calculation methods per location
-- Independent refresh cycles
+Other visible changes: `juma_time` is available every day (not only on Fridays), `special_night` is `unknown` instead of empty when there is nothing special, and _Current prayer period_ shows the prayer's own name during the prayer window.
 
 ---
 
-## Creating Custom API Providers
+## Add your mosque
 
-You can create custom providers to integrate with any prayer times API.
-
-### Step 1: Create Provider File
-
-Create a new file in `api_providers/`:
-
-```python
-# api_providers/my_custom.py
-
-"""Custom prayer times provider for MyMosque API."""
-
-from __future__ import annotations
-
-import logging
-from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
-
-import aiohttp
-
-from .base import (
-    IqamahTimesData,
-    MosqueInfo,
-    PrayerTimesData,
-    PrayerTimesProvider,
-    ProviderConfig,
-    ProviderConnectionError,
-    ProviderResponseError,
-    ProviderValidationError,
-)
-
-if TYPE_CHECKING:
-    from aiohttp import ClientSession
-
-LOGGER = logging.getLogger(__name__)
-
-
-class MyCustomProvider(PrayerTimesProvider):
-    """Provider for MyMosque API."""
-
-    name = "my_custom"
-
-    def __init__(self, config: ProviderConfig, session: ClientSession | None = None):
-        """Initialize the provider."""
-        super().__init__(config, session)
-        self._api_url = "https://api.mymosque.com/prayer-times"
-
-    async def async_fetch_prayer_times(self, target_date: date) -> PrayerTimesData:
-        """Fetch prayer times from the API.
-
-        Args:
-            target_date: The date to fetch times for.
-
-        Returns:
-            PrayerTimesData with all times in UTC.
-
-        Raises:
-            ProviderConnectionError: If API request fails.
-            ProviderResponseError: If response is invalid.
-            ProviderValidationError: If times fail validation.
-        """
-        LOGGER.debug("Fetching prayer times from MyMosque API for %s", target_date)
-
-        # Build API URL with parameters
-        url = f"{self._api_url}?lat={self.config.latitude}&lon={self.config.longitude}&date={target_date}"
-
-        try:
-            async with self._session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status != 200:
-                    raise ProviderConnectionError(f"API returned status {response.status}")
-                json_data = await response.json()
-        except aiohttp.ClientError as err:
-            raise ProviderConnectionError(f"Failed to connect: {err}") from err
-
-        LOGGER.debug("Raw API response: %s", json_data)
-
-        # Parse the response into PrayerTimesData
-        try:
-            prayer_data = self._parse_response(json_data, target_date)
-        except (KeyError, ValueError) as err:
-            raise ProviderResponseError(f"Invalid response format: {err}") from err
-
-        # Validate the data
-        try:
-            prayer_data.validate()
-        except AssertionError as err:
-            raise ProviderValidationError(f"Validation failed: {err}") from err
-
-        return prayer_data
-
-    def _parse_response(self, json_data: dict, target_date: date) -> PrayerTimesData:
-        """Parse API response into standardized format.
-
-        This is where you map the API's field names to standard fields.
-        All times must be converted to UTC timezone-aware datetime objects.
-        """
-        def parse_time(time_str: str) -> datetime:
-            """Convert 'HH:MM' to UTC datetime."""
-            hour, minute = map(int, time_str.split(":"))
-            return datetime(
-                year=target_date.year,
-                month=target_date.month,
-                day=target_date.day,
-                hour=hour,
-                minute=minute,
-                tzinfo=timezone.utc,  # IMPORTANT: Must be timezone-aware
-            )
-
-        # Map API fields to standard fields
-        # Adjust these based on your API's response format
-        return PrayerTimesData(
-            fajr=parse_time(json_data["fajr"]),
-            sunrise=parse_time(json_data["sunrise"]),
-            dhuhr=parse_time(json_data["dhuhr"]),
-            asr=parse_time(json_data["asr"]),
-            maghrib=parse_time(json_data["maghrib"]),
-            isha=parse_time(json_data["isha"]),
-            midnight=parse_time(json_data.get("midnight", "00:00")),
-        )
-
-    async def async_fetch_iqamah_times(self, target_date: date) -> IqamahTimesData | None:
-        """Fetch iqamah times if your API supports them."""
-        # Return None if not supported, or implement similar to prayer times
-        return None
-
-    @property
-    def supports_iqamah(self) -> bool:
-        """Return True if this provider supports iqamah times."""
-        return False
-
-    @property
-    def supports_mosque_search(self) -> bool:
-        """Return True if this provider supports mosque search."""
-        return False
-```
-
-### Step 2: Register the Provider
-
-Update `api_providers/__init__.py`:
-
-```python
-from .my_custom import MyCustomProvider
-
-__all__ = [
-    # ... existing exports
-    "MyCustomProvider",
-]
-```
-
-### Step 3: Add to Coordinator
-
-Update `coordinator.py` to use your provider:
-
-```python
-from .api_providers import MyCustomProvider
-
-# In _get_provider method:
-if source_type == "my_custom":
-    self._provider = MyCustomProvider(config, self._session)
-```
-
-### Step 4: Add Configuration
-
-Update `const.py`:
-
-```python
-SOURCE_MY_CUSTOM: Final = "my_custom"
-
-MY_CUSTOM_CALC_METHODS: Final = {
-    "MyMosque - Main Branch": "my-main",
-    "MyMosque - North Branch": "my-north",
-}
-```
-
-Update `config_flow.py` to include your source type option.
-
-### Data Model Reference
-
-#### PrayerTimesData
-
-**Required fields** (all must be UTC timezone-aware datetime):
-
-```python
-fajr: datetime       # Dawn prayer
-sunrise: datetime    # Sunrise
-dhuhr: datetime      # Noon prayer
-asr: datetime        # Afternoon prayer
-maghrib: datetime    # Sunset prayer
-isha: datetime       # Night prayer
-```
-
-**Optional fields:**
-
-```python
-midnight: datetime | None   # Islamic midnight
-imsak: datetime | None      # Suhoor end time (must be before fajr)
-sunset: datetime | None     # Defaults to maghrib if not set
-```
-
-**Validation rules:**
-
-- All times must be timezone-aware (have tzinfo set)
-- Times must be in chronological order: fajr < sunrise < dhuhr < asr < maghrib < isha
-- Imsak must be before fajr
-
-#### IqamahTimesData
-
-**All fields optional** (UTC timezone-aware datetime):
-
-```python
-fajr: datetime | None
-dhuhr: datetime | None
-asr: datetime | None
-maghrib: datetime | None
-isha: datetime | None
-juma: datetime | None           # Friday prayer
-juma_khutbah: datetime | None   # Khutbah start time
-```
-
-#### MosqueInfo
-
-```python
-name: str              # Required: Mosque name
-uuid: str              # Required: Unique identifier
-latitude: float        # Required: Latitude
-longitude: float       # Required: Longitude
-address: str | None    # Street address
-city: str | None       # City name
-country: str | None    # Country name
-website: str | None    # Website URL
-timezone: str | None   # Timezone (e.g., "Europe/Dublin")
-```
+Mosques are data, not code: one record in `custom_components/muslim_prayer_companion/data/mosques.json` plus a label in the translation files adds a mosque that publishes its times with the Daily Prayer Time WordPress plugin. Other formats need a small parser. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Development
 
-### Setup Development Environment
-
 ```bash
-# Clone the repository
 git clone https://github.com/amaharek/muslim_prayer_companion.git
 cd muslim_prayer_companion
 
-# Install UV (if not installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 
-# Install dependencies
-uv sync
+pytest -q --cov                       # tests with coverage
+ruff check . && ruff format .         # lint and format
+pre-commit run --all-files            # every hook
 
-# Run tests
-uv run pytest -v
-
-# Run with coverage
-uv run pytest --cov custom_components/muslim_prayer_companion -v
-
-# Lint and format
-uv run ruff format .
-uv run ruff check . --fix
-
-# Run pre-commit hooks
-uv run pre-commit run --all-files
+python -I scripts/build_icci_timetable.py --check     # verify the bundled ICCI table
+python -I scripts/build_icci_timetable.py --download  # rebuild it from the Wayback snapshot
+python scripts/check_mosques.py                       # fetch and parse every mosque source
 ```
 
-### Project Structure
+Continuous integration runs the tests against Home Assistant 2025.2.4 (the minimum) and the latest release, ruff and pre-commit, hassfest and HACS validation. A weekly workflow runs `scripts/check_mosques.py` and opens an issue when a mosque source breaks.
+
+### Project structure
 
 ```
-muslim_prayer_companion/
-├── custom_components/muslim_prayer_companion/
-│   ├── __init__.py              # Entry point, migration
-│   ├── config_flow.py           # Configuration UI
-│   ├── const.py                 # Constants
-│   ├── coordinator.py           # Data coordinator
-│   ├── sensor.py                # Sensor definitions
-│   ├── manifest.json            # Integration manifest
-│   ├── api_providers/           # Provider abstraction
-│   │   ├── base.py              # Base classes
-│   │   ├── calculated.py        # Library-based calculation
-│   │   └── ireland.py           # Ireland APIs
-│   ├── helpers/                 # Utilities
-│   │   ├── hijri.py             # Hijri conversion
-│   │   ├── qibla.py             # Qibla calculation
-│   │   └── special_dates.py     # Special date detection
-│   └── translations/            # UI translations
-├── tests/                       # Test suite
-├── pyproject.toml               # Project configuration
-└── README.md                    # This file
+custom_components/muslim_prayer_companion/
+├── __init__.py            # Setup, migration, device removal, get_prayer_times action
+├── config_flow.py         # Setup, reconfigure and options menu
+├── coordinator.py         # Fetch, fallback + Repairs, per-minute tick, events
+├── sensor.py              # Sensor platform (groups, Friday devices, cleanup)
+├── diagnostics.py
+├── services.yaml
+├── data/
+│   ├── mosques.json       # Mosque registry
+│   └── icci_timetable.json
+├── api_providers/
+│   ├── base.py            # Data models, provider interface
+│   ├── calculated.py      # prayer-times-calculator-offline
+│   ├── ireland.py         # Irish mosques (dispatch by source type)
+│   ├── icci_timetable.py  # Bundled ICCI table
+│   ├── dpt.py             # Daily Prayer Time plugin parser
+│   ├── mai.py             # maionline.ie homepage parser
+│   └── http.py
+├── helpers/
+│   ├── derived.py         # Pure builder of the sensor data
+│   ├── friday.py          # Friday prayers
+│   ├── iqamah.py
+│   ├── hijri.py / special_dates.py / qibla.py
+│   ├── registry.py        # mosques.json loader
+│   └── settings.py        # Typed options
+└── translations/          # en, ar (strings.json mirrors en)
 ```
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+- **A Repairs issue says prayer times are calculated, not from the mosque.** The mosque's source could not be read; the issue text shows the URL and the error. Times keep coming from the ISNA calculation until the source recovers, after which the issue closes itself. If it stays open for days, the source has probably changed: please open an issue here.
+- **Prayer times look wrong.** Check the `source` attribute of a prayer-time sensor, the calculation method (**Configure → Calculation method**) and your Home Assistant time zone.
+- **Entities are missing.** The sensor group may be disabled under **Configure → Sensors and display**.
+- **Debug logging:**
 
-#### Sensors show "Unknown" or "Unavailable"
+  ```yaml
+  logger:
+    default: warning
+    logs:
+      custom_components.muslim_prayer_companion: debug
+  ```
 
-1. Check your internet connection (for API-based methods)
-2. Verify coordinates are correct in your Home Assistant settings
-3. Check the Home Assistant logs for error messages
-4. Try reloading the integration
-
-#### Prayer times are wrong
-
-1. Verify your calculation method matches your location/school of thought
-2. Check if your timezone is correctly set in Home Assistant
-3. For Ireland methods, ensure the mosque API is accessible
-
-#### Multiple entries showing same data
-
-Each entry should have unique coordinates or calculation methods. Check that you've configured different locations.
-
-### Debug Logging
-
-Enable debug logging by adding to `configuration.yaml`:
-
-```yaml
-logger:
-  default: warning
-  logs:
-    custom_components.muslim_prayer_companion: debug
-```
-
-### Getting Help
-
-- **Issues**: [GitHub Issues](https://github.com/amaharek/muslim_prayer_companion/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/amaharek/muslim_prayer_companion/discussions)
+- **Diagnostics:** on the entry page, choose **Download diagnostics** (coordinates are redacted) and attach the file to your issue.
+- **Help:** [GitHub Issues](https://github.com/amaharek/muslim_prayer_companion/issues).
 
 ---
 
 ## License
 
-This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+Apache 2.0, see [LICENSE](LICENSE).
 
 ---
 
 ## Acknowledgments
 
-- [prayer-times-calculator](https://pypi.org/project/prayer-times-calculator/) library
-- [hijri-converter](https://pypi.org/project/hijri-converter/) library
-- Home Assistant community
-- Irish mosque communities for API access
+- The Islamic Cultural Centre of Ireland, Muslim Community North Dublin, Hansfield Islamic Cultural Centre, South Dublin Islamic Centre and the Muslim Association of Ireland for publishing their prayer times.
+- [prayer-times-calculator-offline](https://pypi.org/project/prayer-times-calculator-offline/) and [hijridate](https://pypi.org/project/hijridate/).
+- The Home Assistant community.
 
 ---
 
