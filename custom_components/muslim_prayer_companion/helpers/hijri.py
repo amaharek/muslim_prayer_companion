@@ -1,13 +1,24 @@
-"""Hijri date utilities for Muslim Prayer Companion."""
+"""
+Hijri date utilities for Muslim Prayer Companion.
+
+Dates come from ``hijridate`` (the Umm al-Qura calendar, valid from 1924-08-01
+to 2077-11-16). Two user options are applied on top: a day adjustment of up to
+two days either way, to follow local moon sighting, and whether the Hijri day
+changes at Maghrib (as it does religiously) or at midnight.
+"""
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
+from functools import cache
+import logging
 from typing import TYPE_CHECKING
 
-from hijri_converter import Gregorian, Hijri
+from hijridate import Gregorian, Hijri
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,9 +37,10 @@ HIJRI_MONTHS = {
     11: "Dhul Qi'dah",
     12: "Dhul Hijjah",
 }
+RAMADAN = 9
 
 
-@dataclass
+@dataclass(frozen=True)
 class HijriDate:
     """Hijri date representation."""
 
@@ -36,6 +48,7 @@ class HijriDate:
     month: int
     year: int
     month_name: str
+    month_length: int = 30
 
     @property
     def date_string(self) -> str:
@@ -65,54 +78,65 @@ class HijriDate:
         }
 
 
-def get_hijri_date(gregorian_date: date | None = None) -> HijriDate:
-    """Convert a Gregorian date to Hijri date.
+@cache
+def _warn_once(message: str) -> None:
+    """Log a warning the first time ``message`` is seen in this process."""
+    LOGGER.warning("%s", message)
 
-    Args:
-        gregorian_date: The Gregorian date to convert. Defaults to today.
 
-    Returns:
-        HijriDate object with all date components.
+def get_hijri_date(gregorian_date: date, adjustment_days: int = 0) -> HijriDate | None:
     """
-    if gregorian_date is None:
-        gregorian_date = date.today()
+    Convert a Gregorian date to the Hijri date, shifted by ``adjustment_days``.
 
+    Returns None (and warns once) when the date is outside the calendar's range.
+    """
+    base = gregorian_date + timedelta(days=adjustment_days)
     try:
-        hijri = Gregorian(
-            gregorian_date.year,
-            gregorian_date.month,
-            gregorian_date.day,
-        ).to_hijri()
-
-        month_name = HIJRI_MONTHS.get(hijri.month, f"Month {hijri.month}")
-
-        return HijriDate(
-            day=hijri.day,
-            month=hijri.month,
-            year=hijri.year,
-            month_name=month_name,
-        )
-    except Exception as err:
-        LOGGER.error("Failed to convert Gregorian date to Hijri: %s", err)
-        # Return a fallback
-        return HijriDate(
-            day=1,
-            month=1,
-            year=1446,
-            month_name="Muharram",
-        )
+        hijri = Gregorian(base.year, base.month, base.day).to_hijri()
+    except (OverflowError, ValueError) as err:
+        _warn_once(f"Cannot convert {base} to a Hijri date: {err}")
+        return None
+    return HijriDate(
+        day=hijri.day,
+        month=hijri.month,
+        year=hijri.year,
+        month_name=HIJRI_MONTHS.get(hijri.month, f"Month {hijri.month}"),
+        month_length=hijri.month_length(),
+    )
 
 
-def hijri_to_gregorian(hijri_year: int, hijri_month: int, hijri_day: int) -> date:
-    """Convert Hijri date to Gregorian date.
-
-    Args:
-        hijri_year: Hijri year.
-        hijri_month: Hijri month (1-12).
-        hijri_day: Hijri day.
-
-    Returns:
-        Gregorian date.
+def effective_hijri_date(
+    now_utc: datetime,
+    local_tz: ZoneInfo,
+    maghrib_today_utc: datetime | None,
+    *,
+    change_at_maghrib: bool = False,
+    adjustment_days: int = 0,
+) -> HijriDate | None:
     """
-    gregorian = Hijri(hijri_year, hijri_month, hijri_day).to_gregorian()
-    return date(gregorian.year, gregorian.month, gregorian.day)
+    Return the Hijri date in force at ``now_utc``.
+
+    With ``change_at_maghrib`` the Hijri day advances at today's Maghrib
+    instead of at local midnight.
+    """
+    base = now_utc.astimezone(local_tz).date()
+    if change_at_maghrib and maghrib_today_utc is not None and now_utc >= maghrib_today_utc:
+        base += timedelta(days=1)
+    return get_hijri_date(base, adjustment_days)
+
+
+def hijri_to_gregorian(
+    hijri_year: int, hijri_month: int, hijri_day: int, adjustment_days: int = 0
+) -> date | None:
+    """
+    Convert a Hijri date to the Gregorian date it falls on.
+
+    ``adjustment_days`` is the user's Hijri adjustment: with an adjustment of
+    +1 the Hijri date is one day ahead of Umm al-Qura, so each Hijri date falls
+    one Gregorian day earlier.
+    """
+    try:
+        gregorian = Hijri(hijri_year, hijri_month, hijri_day).to_gregorian()
+    except (OverflowError, ValueError):
+        return None
+    return date(gregorian.year, gregorian.month, gregorian.day) - timedelta(days=adjustment_days)

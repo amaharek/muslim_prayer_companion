@@ -10,7 +10,8 @@ KAABA_LONGITUDE = 39.8262
 
 
 def calculate_qibla_direction(latitude: float, longitude: float) -> float:
-    """Calculate the Qibla direction (bearing to Mecca) from a given location.
+    """
+    Calculate the Qibla direction (bearing to Mecca) from a given location.
 
     Args:
         latitude: Observer's latitude in degrees.
@@ -30,9 +31,7 @@ def calculate_qibla_direction(latitude: float, longitude: float) -> float:
 
     # Calculate bearing using the spherical law of cosines
     x = math.sin(delta_lon) * math.cos(lat2)
-    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(
-        delta_lon
-    )
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon)
 
     # Calculate initial bearing
     bearing = math.atan2(x, y)
@@ -47,7 +46,8 @@ def calculate_qibla_direction(latitude: float, longitude: float) -> float:
 
 
 def get_qibla_compass_direction(qibla_degrees: float) -> str:
-    """Get compass direction name for Qibla.
+    """
+    Get compass direction name for Qibla.
 
     Args:
         qibla_degrees: Qibla direction in degrees.
@@ -80,7 +80,8 @@ def get_qibla_compass_direction(qibla_degrees: float) -> str:
 
 
 def calculate_distance_to_mecca(latitude: float, longitude: float) -> float:
-    """Calculate the distance to Mecca in kilometers.
+    """
+    Calculate the distance to Mecca in kilometers.
 
     Uses the Haversine formula for great-circle distance.
 
