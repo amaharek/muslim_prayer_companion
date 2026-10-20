@@ -4,16 +4,21 @@ Muslim Prayer Companion Coordinator
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from functools import cache
+from pathlib import Path
 
 import async_timeout
 import homeassistant.util.dt as dt_util
 import requests
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import SUN_EVENT_SUNSET
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_point_in_time
+from homeassistant.helpers.sun import get_astral_event_date
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from prayer_times_calculator import PrayerTimesCalculator, exceptions
 from requests.exceptions import ConnectionError as ConnError
@@ -194,6 +199,125 @@ def get_prayers_by_wp_plugin(url: str, name: str, standard_maghrib: str, midnigh
     return None
 
 
+# --- ICCI timetable ---
+
+ICCI_TIMETABLE_PATH = Path(__file__).parent / "data" / "icci_timetable.json"
+ICCI_DST_THRESHOLD = timedelta(minutes=30)
+
+
+def is_valid_icci_day(prayers: list[list[int]]) -> bool:
+    """
+    Check one timetable day: six [hour, minute] pairs.
+
+    Args:
+        prayers (list): [hour, minute] for fajr, shurooq, dhuhr, asr, maghrib, isha
+
+    Returns:
+        bool: True if the day is well formed
+    """
+    return len(prayers) == 6 and all(
+        len(pair) == 2
+        and all(isinstance(value, int) for value in pair)
+        and 0 <= pair[0] < 24
+        and 0 <= pair[1] < 60
+        for pair in prayers
+    )
+
+
+@cache
+def load_icci_timetable() -> dict[str, dict[str, list[list[int]]]] | None:
+    """
+    Load the bundled ICCI timetable, once per run.
+
+    The timetable is keyed by month then day ("1".."12", "1".."31", with 29 Feb)
+    and holds the six prayer times of each day in local Irish clock time.
+    This reads a file: call it from executor code, never from the event loop.
+
+    Returns:
+        dict: The timetable, or None if the file is missing or corrupt
+    """
+    try:
+        data = json.loads(ICCI_TIMETABLE_PATH.read_text(encoding="utf-8"))
+        timetable = data["timetable"]
+        for month in range(1, 13):
+            # 2024 is a leap year, so 29 Feb must be present too.
+            for day in range(1, calendar.monthrange(2024, month)[1] + 1):
+                if not is_valid_icci_day(timetable[str(month)][str(day)]):
+                    msg = f"invalid prayer times for {day}/{month}"
+                    raise ValueError(msg)
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        LOGGER.warning(
+            "ICCI timetable %s is missing or corrupt (%s), "
+            "falling back to the ISNA calculation",
+            ICCI_TIMETABLE_PATH,
+            e,
+        )
+        return None
+    return timetable
+
+
+def get_dst_hour_offset(
+    table_maghrib: list[int], target_date: date, local_sunset: datetime
+) -> int:
+    """
+    Give the hour fix for a timetable day on the wrong clock (summer time or GMT).
+
+    The ICCI timetable changes clocks on 1 April and 1 November instead of the
+    actual DST dates. Its Maghrib is always within minutes of sunset, so a gap
+    of more than 30 minutes means the whole day is one hour off.
+
+    Args:
+        table_maghrib (list): Maghrib from the timetable, [hour, minute]
+        target_date (date): Day the timetable entry is used for
+        local_sunset (datetime): Sunset on that day, in local time
+
+    Returns:
+        int: Hour offset (-1, 0 or 1)
+    """
+    maghrib = datetime.combine(target_date, time(*table_maghrib))
+    delta = maghrib - local_sunset.replace(tzinfo=None)
+    if abs(delta) <= ICCI_DST_THRESHOLD:
+        return 0
+    return -1 if delta > timedelta(0) else 1
+
+
+def get_local_datetime(day: date, time_list: list[int], offset: int = 0) -> datetime:
+    """
+    Combine a day and a timetable time into a local, timezone-aware datetime.
+
+    Args:
+        day (date): Day
+        time_list (list): [hour, minute]
+        offset (int): Hour offset correction
+
+    Returns:
+        datetime: Local time on that day
+    """
+    return datetime.combine(
+        day,
+        time((time_list[0] + offset) % 24, time_list[1]),
+        tzinfo=dt_util.get_default_time_zone(),
+    )
+
+
+def get_midnight(maghrib: datetime, next_sunrise: datetime) -> str:
+    """
+    Return the midpoint between Maghrib and the next day's sunrise.
+
+    The arithmetic is done in UTC, so a DST change during the night is counted.
+
+    Args:
+        maghrib (datetime): Maghrib, timezone-aware
+        next_sunrise (datetime): Sunrise on the next day, timezone-aware
+
+    Returns:
+        str: Local time in format HH:MM, rounded down to the minute
+    """
+    start = dt_util.as_utc(maghrib)
+    midnight = start + (dt_util.as_utc(next_sunrise) - start) / 2
+    return dt_util.as_local(midnight).strftime("%H:%M")
+
+
 # --- Coordinator Class ---
 
 
@@ -259,38 +383,47 @@ class MuslimPrayerCompanionDataUpdateCoordinator(DataUpdateCoordinator[dict[str,
         )
         return calc.fetch_prayer_times()
 
+    def _get_icci_hour_offset(self, prayers: list[list[int]], target_date: date) -> int:
+        """Return the DST hour fix for an ICCI timetable day, using local sunset."""
+        sunset = get_astral_event_date(self.hass, SUN_EVENT_SUNSET, target_date)
+        if sunset is not None:
+            return get_dst_hour_offset(
+                prayers[4], target_date, dt_util.as_local(sunset)
+            )
+        # No sunset at this location on that day: compare with ISNA instead.
+        try:
+            st_maghrib = self._get_prayer_times_standard(target_date)["Maghrib"]
+        except Exception as e:
+            LOGGER.info("Failed to get the ISNA Maghrib for the ICCI DST fix: %s", e)
+            return 0
+        return get_hour_offset_fix(format_time(prayers[4]), st_maghrib)
+
     def _get_prayer_times_ie_icci(self, target_date: date) -> dict[str, str]:
-        """Fetch prayer times for 'ie-icci' method on target_date."""
-        st_maghrib, midnight, isna_prayers = get_standard_sunset_midnight(
-            self.hass.config.latitude, self.hass.config.longitude, "isna"
+        """Get 'ie-icci' prayer times for target_date from the bundled timetable."""
+        timetable = load_icci_timetable()
+        if timetable is None:
+            return self._get_prayer_times_standard(target_date)
+
+        prayers = timetable[str(target_date.month)][str(target_date.day)]
+        hr_offset = self._get_icci_hour_offset(prayers, target_date)
+        next_date = target_date + timedelta(days=1)
+        next_prayers = timetable[str(next_date.month)][str(next_date.day)]
+        next_hr_offset = self._get_icci_hour_offset(next_prayers, next_date)
+        midnight = get_midnight(
+            get_local_datetime(target_date, prayers[4], hr_offset),
+            get_local_datetime(next_date, next_prayers[1], next_hr_offset),
         )
-        url = "https://islamireland.ie/api/timetable/"
-        json_resp = get_json_response(url)
-        if json_resp:
-            try:
-                current_month = target_date.strftime("%-m")
-                current_day = target_date.strftime("%-d")
-                prayers = json_resp["timetable"][current_month][current_day]
-                icci_maghrib = format_time(prayers[4], 0)
-                hr_offset = get_hour_offset_fix(icci_maghrib, st_maghrib)
-                prayer_times_info = {
-                    "Fajr": format_time(prayers[0], hr_offset),
-                    "Sunrise": format_time(prayers[1], hr_offset),
-                    "Dhuhr": format_time(prayers[2], hr_offset),
-                    "Asr": format_time(prayers[3], hr_offset),
-                    "Sunset": format_time(prayers[4], hr_offset),
-                    "Maghrib": format_time(prayers[4], hr_offset),
-                    "Isha": format_time(prayers[5], hr_offset),
-                    "Imsak": format_time(prayers[4], hr_offset),
-                    "Midnight": midnight,
-                }
-                return prayer_times_info
-            except Exception as e:
-                LOGGER.info(f"ICCI API parse error: {e}")
-                return isna_prayers
-        else:
-            LOGGER.info("ICCI API JSON response is None.")
-            return isna_prayers
+        return {
+            "Fajr": format_time(prayers[0], hr_offset),
+            "Sunrise": format_time(prayers[1], hr_offset),
+            "Dhuhr": format_time(prayers[2], hr_offset),
+            "Asr": format_time(prayers[3], hr_offset),
+            "Sunset": format_time(prayers[4], hr_offset),
+            "Maghrib": format_time(prayers[4], hr_offset),
+            "Isha": format_time(prayers[5], hr_offset),
+            "Imsak": format_time(prayers[4], hr_offset),
+            "Midnight": midnight,
+        }
 
     def _get_prayer_times_wp_plugin(
         self, calc_method: str, target_date: date

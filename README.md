@@ -35,11 +35,9 @@ This integration sets up the following platform:
 ### Steps
 
 1. **Open HACS in your Home Assistant instance.**
-
    - Navigate to the HACS section from the sidebar.
 
 2. **Add the Muslim Prayer Companion repository as a custom repository:**
-
    - Click on the three dots (⋮) in the top right corner and select **Custom repositories**.
    - In the dialog that appears:
      - Paste the URL of the Muslim Prayer Companion repository: `https://github.com/amaharek/muslim_prayer_companion`.
@@ -47,7 +45,6 @@ This integration sets up the following platform:
      - Click the **Add** button.
 
 3. **Install the integration:**
-
    - After adding the custom repository, search for **Muslim Prayer Companion** in the HACS integrations section.
    - Click on the integration and then click the **Download** button to install it.
 
@@ -57,7 +54,6 @@ This integration sets up the following platform:
 ## Configuration
 
 1. **Add the integration:**
-
    - Navigate to **Settings > Devices & Services > Add Integration**.
    - Search for **Muslim Prayer Companion** and select it.
 
@@ -79,6 +75,10 @@ The integration supports multiple calculation methods for prayer times. During s
 | `ie-icci`          | Islamic Cultural Centre of Ireland (recommended for Ireland). |
 | `ie-mcnd`          | Muslim Community North Dublin.                                |
 | `ie-hicc`          | Hansfield Islamic Cultural Centre.                            |
+
+#### ICCI prayer times
+
+The `ie-icci` times come from the Islamic Cultural Centre of Ireland's own prayer timetable, credited to the [Islamic Cultural Centre of Ireland](https://islamireland.ie). ICCI no longer publishes the timetable as JSON, so the integration bundles a copy of its perpetual timetable, taken from this [Wayback Machine snapshot](https://web.archive.org/web/20220802110619id_/https://islamireland.ie/api/timetable/) (2 August 2022). The times are worked out offline and need no network access. The timetable changes clocks on 1 April and 1 November, so on the days between the real Irish DST change and those dates the integration shifts all times by one hour, checked against Home Assistant's local sunset.
 
 You can update the calculation method later by editing the integration's options in **Settings > Devices & Services > Muslim Prayer Companion > Configure**.
 
