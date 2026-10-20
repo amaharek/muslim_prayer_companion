@@ -1,23 +1,49 @@
-"""Ireland mosque API providers (ICCI, MCND, HICC, SDIC)."""
+"""
+Unified provider for the Irish mosques listed in ``data/mosques.json``.
+
+One provider class serves every registry source type:
+
+* ``icci_timetable``: the bundled ICCI perpetual timetable (offline),
+* ``dpt``: the WordPress "Daily Prayer Time" plugin JSON API (MCND, HICC, SDIC),
+* ``mai_html``: the Muslim Association of Ireland homepage (Tallaght).
+
+Network payloads are cached for a few minutes so prayer times, iqamah times
+and Friday prayers share a single request per refresh.
+"""
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, date, datetime
 import logging
-from datetime import date, datetime, timedelta, timezone
+import time as time_module
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
-import aiohttp
-
+from ..const import PAYLOAD_CACHE_SECONDS
+from ..helpers.registry import (
+    MOSQUE_KEYS,
+    SOURCE_TYPE_DPT,
+    SOURCE_TYPE_ICCI_TIMETABLE,
+    SOURCE_TYPE_MAI_HTML,
+    Mosque,
+    get_mosque,
+    mosques_by_distance,
+)
 from .base import (
     IqamahTimesData,
     MosqueInfo,
     PrayerTimesData,
     PrayerTimesProvider,
     ProviderConfig,
-    ProviderConnectionError,
     ProviderResponseError,
+    ProviderResult,
     ProviderValidationError,
 )
+from .dpt import parse_dpt_payload
+from .http import fetch_json, fetch_text
+from .icci_timetable import build_icci_result, load_icci_timetable
+from .mai import build_mai_result, parse_mai_homepage
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -25,440 +51,201 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
-# Ireland API configurations
-IRELAND_APIS = {
-    "ie-icci": {
-        "name": "Islamic Cultural Centre of Ireland (ICCI)",
-        "url": "https://islamireland.ie/api/timetable/",
-        "type": "icci",
-        "mosque_info": MosqueInfo(
-            name="Islamic Cultural Centre of Ireland",
-            uuid="ie-icci",
-            latitude=53.2663,
-            longitude=-6.2135,
-            address="19 Roebuck Road, Clonskeagh",
-            city="Dublin",
-            country="Ireland",
-            website="https://islamireland.ie",
-            timezone="Europe/Dublin",
-        ),
-    },
-    "ie-mcnd": {
-        "name": "Muslim Community North Dublin (MCND)",
-        "url": "https://mcnd.ie/wp-json/dpt/v1/prayertime?filter=today",
-        "type": "wordpress",
-        "mosque_info": MosqueInfo(
-            name="Muslim Community North Dublin",
-            uuid="ie-mcnd",
-            latitude=53.4023,
-            longitude=-6.1756,
-            address="Rolestown",
-            city="Dublin",
-            country="Ireland",
-            website="https://mcnd.ie",
-            timezone="Europe/Dublin",
-        ),
-    },
-    "ie-hicc": {
-        "name": "Hansfield Islamic Cultural Centre (HICC)",
-        "url": "https://hicc.ie/wp-json/dpt/v1/prayertime?filter=today",
-        "type": "wordpress",
-        "mosque_info": MosqueInfo(
-            name="Hansfield Islamic Cultural Centre",
-            uuid="ie-hicc",
-            latitude=53.3940,
-            longitude=-6.4258,
-            address="Hansfield",
-            city="Dublin",
-            country="Ireland",
-            website="https://hicc.ie",
-            timezone="Europe/Dublin",
-        ),
-    },
-    "ie-sdic": {
-        "name": "South Dublin Islamic Centre (SDIC)",
-        "url": "https://sdic.ie/wp-json/dpt/v1/prayertime?filter=today",
-        "type": "wordpress",
-        "mosque_info": MosqueInfo(
-            name="South Dublin Islamic Centre",
-            uuid="ie-sdic",
-            latitude=53.2870,
-            longitude=-6.3722,
-            address="Tallaght",
-            city="Dublin",
-            country="Ireland",
-            website="https://sdic.ie",
-            timezone="Europe/Dublin",
-        ),
-    },
-}
+def mosque_info(mosque: Mosque) -> MosqueInfo:
+    """Return the provider-layer MosqueInfo for a registry record."""
+    return MosqueInfo(
+        name=mosque.name,
+        uuid=mosque.key,
+        latitude=mosque.latitude,
+        longitude=mosque.longitude,
+        address=mosque.address,
+        city=mosque.city,
+        country=mosque.country,
+        website=mosque.website,
+        timezone=mosque.timezone,
+        short_name=mosque.short_name,
+    )
 
 
 class IrelandProvider(PrayerTimesProvider):
-    """Unified provider for Ireland mosque APIs (ICCI, MCND, HICC, SDIC)."""
+    """Prayer times from an Irish mosque's published source."""
 
     name = "ireland"
 
-    def __init__(self, config: ProviderConfig, session: ClientSession | None = None):
-        """Initialize the Ireland provider.
+    def __init__(self, config: ProviderConfig, session: ClientSession | None = None) -> None:
+        """
+        Initialize the provider for the mosque named by ``calculation_method``.
 
-        Args:
-            config: Provider configuration with calculation_method set to ireland API key.
-            session: Optional aiohttp ClientSession for HTTP requests.
+        Raises:
+            ValueError: If the mosque key is not in the registry.
         """
         super().__init__(config, session)
 
-        api_key = config.calculation_method.lower()
-        if api_key not in IRELAND_APIS:
-            raise ValueError(
-                f"Unknown Ireland API: {api_key}. "
-                f"Valid options: {', '.join(IRELAND_APIS.keys())}"
-            )
+        key = config.calculation_method.lower()
+        try:
+            self.mosque = get_mosque(key)
+        except KeyError:
+            msg = f"Unknown Ireland API: {key}. Valid options: {', '.join(MOSQUE_KEYS)}"
+            raise ValueError(msg) from None
+        self._key = key
+        self.source_id = self.mosque.source_id
+        self._tz = ZoneInfo(self.mosque.timezone)
+        # (date the payload is for, monotonic fetch time, payload)
+        self._payload: tuple[date, float, Any] | None = None
 
-        self._api_key = api_key
-        self._api_config = IRELAND_APIS[api_key]
-        self._owns_session = False
+    @property
+    def key(self) -> str:
+        """Return the registry key, e.g. ``ie-icci``."""
+        return self._key
 
     @property
     def api_name(self) -> str:
-        """Return the API name."""
-        return self._api_config["name"]
+        """Return the mosque name."""
+        return self.mosque.name
+
+    @property
+    def url(self) -> str:
+        """Return the URL the data comes from, or the website for bundled data."""
+        return self.mosque.source.url or self.mosque.website
 
     @property
     def mosque_info(self) -> MosqueInfo:
-        """Return mosque information for this API."""
-        return self._api_config["mosque_info"]
+        """Return mosque information."""
+        return mosque_info(self.mosque)
 
-    async def _ensure_session(self) -> ClientSession:
-        """Ensure we have an aiohttp session."""
-        if self._session is None:
-            self._session = aiohttp.ClientSession()
-            self._owns_session = True
-        return self._session
+    @property
+    def timezone(self) -> ZoneInfo:
+        """Return the mosque's time zone."""
+        return self._tz
+
+    # --- HTTP -----------------------------------------------------------------
+
+    async def _fetch_text(self, url: str) -> str:
+        """GET ``url`` and return the body as text (see ``http.fetch_text``)."""
+        return await fetch_text(self._session, url)
 
     async def _fetch_json(self, url: str) -> Any:
-        """Fetch JSON from URL.
+        """GET ``url`` and parse the body as JSON (see ``http.fetch_json``)."""
+        return await fetch_json(self._session, url)
 
-        Args:
-            url: URL to fetch.
+    async def async_get_payload(self, target_date: date) -> Any:
+        """Return the raw payload for ``target_date``, fetching at most every few minutes."""
+        now = time_module.monotonic()
+        if (
+            self._payload is not None
+            and self._payload[0] == target_date
+            and now - self._payload[1] < PAYLOAD_CACHE_SECONDS
+        ):
+            return self._payload[2]
 
-        Returns:
-            Parsed JSON response.
+        source = self.mosque.source
+        if source.type == SOURCE_TYPE_DPT:
+            payload = await self._fetch_json(source.url or "")
+        elif source.type == SOURCE_TYPE_MAI_HTML:
+            payload = await self._fetch_text(source.url or "")
+        else:
+            msg = f"{self.api_name} has no network payload"
+            raise ProviderResponseError(msg)
+        self._payload = (target_date, now, payload)
+        return payload
 
-        Raises:
-            ProviderConnectionError: If request fails.
-            ProviderResponseError: If response is invalid.
-        """
-        session = await self._ensure_session()
+    def clear_cache(self) -> None:
+        """Forget the cached payload."""
+        self._payload = None
 
+    # --- Fetching -------------------------------------------------------------
+
+    async def async_fetch(self, target_date: date) -> ProviderResult:
+        """Fetch everything the mosque publishes for ``target_date``."""
+        source_type = self.mosque.source.type
+        if source_type == SOURCE_TYPE_ICCI_TIMETABLE:
+            result = await self._fetch_icci(target_date)
+        elif source_type == SOURCE_TYPE_DPT:
+            result = await self._fetch_dpt(target_date)
+        elif source_type == SOURCE_TYPE_MAI_HTML:
+            result = await self._fetch_mai(target_date)
+        else:  # pragma: no cover - the registry validates source types
+            msg = f"Unsupported source type {source_type!r}"
+            raise ProviderResponseError(msg)
+
+        for data in (result.today, result.tomorrow):
+            if data is None:
+                continue
+            try:
+                data.validate()
+            except AssertionError as err:
+                msg = f"Invalid prayer times from {self.api_name}: {err}"
+                raise ProviderValidationError(msg) from err
+        return result
+
+    async def _fetch_icci(self, target_date: date) -> ProviderResult:
+        """Read the bundled ICCI timetable (file I/O off the event loop)."""
+        timetable = await asyncio.to_thread(load_icci_timetable)
+        if timetable is None:
+            msg = "Bundled ICCI timetable is missing or corrupt"
+            raise ProviderResponseError(msg)
+        return build_icci_result(timetable, target_date)
+
+    async def _fetch_dpt(self, target_date: date) -> ProviderResult:
+        """Fetch and parse the WordPress dpt payload."""
+        payload = await self.async_get_payload(target_date)
         try:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=30)
-            ) as response:
-                if response.status != 200:
-                    raise ProviderConnectionError(
-                        f"API request failed with status {response.status}"
-                    )
-                return await response.json()
-        except aiohttp.ClientError as err:
-            raise ProviderConnectionError(f"Failed to connect to API: {err}") from err
-        except Exception as err:
-            raise ProviderResponseError(f"Failed to parse API response: {err}") from err
+            return parse_dpt_payload(payload, target_date, self._tz, self.source_id)
+        except (KeyError, ValueError, TypeError) as err:
+            msg = f"Invalid response from {self.api_name}: {err}"
+            raise ProviderResponseError(msg) from err
+
+    async def _fetch_mai(self, target_date: date) -> ProviderResult:
+        """Fetch and parse the MAI homepage (today only, Dublin date)."""
+        dublin_today = datetime.now(UTC).astimezone(self._tz).date()
+        if target_date != dublin_today:
+            msg = f"{self.api_name} only publishes today's times ({dublin_today})"
+            raise ProviderResponseError(msg)
+        html = await self.async_get_payload(target_date)
+        try:
+            parsed = parse_mai_homepage(html)
+        except ValueError as err:
+            msg = f"Could not read prayer times from {self.url}: {err}"
+            raise ProviderResponseError(msg) from err
+        return build_mai_result(parsed, dublin_today, self._tz)
 
     async def async_fetch_prayer_times(self, target_date: date) -> PrayerTimesData:
-        """Fetch prayer times from the Ireland API.
+        """Fetch prayer times for one date."""
+        return (await self.async_fetch(target_date)).today
 
-        Args:
-            target_date: The date to fetch prayer times for.
-
-        Returns:
-            PrayerTimesData with all prayer times in UTC.
-
-        Raises:
-            ProviderConnectionError: If API request fails.
-            ProviderResponseError: If API returns invalid data.
-            ProviderValidationError: If times fail validation.
-        """
-        LOGGER.debug(
-            "Fetching prayer times from %s for %s",
-            self.api_name,
-            target_date,
-        )
-
-        url = self._api_config["url"]
-        api_type = self._api_config["type"]
-
-        try:
-            json_response = await self._fetch_json(url)
-        except (ProviderConnectionError, ProviderResponseError):
-            raise
-
-        LOGGER.debug("Raw API response from %s: %s", self.api_name, json_response)
-
-        try:
-            if api_type == "icci":
-                prayer_data = self._parse_icci_response(json_response, target_date)
-            else:  # wordpress
-                prayer_data = self._parse_wordpress_response(json_response, target_date)
-        except (KeyError, ValueError, TypeError) as err:
-            LOGGER.error("Failed to parse %s response: %s", self.api_name, err)
-            raise ProviderResponseError(
-                f"Invalid response from {self.api_name}: {err}"
-            ) from err
-
-        try:
-            prayer_data.validate()
-        except AssertionError as err:
-            LOGGER.error(
-                "Prayer times validation failed for %s: %s", self.api_name, err
-            )
-            raise ProviderValidationError(
-                f"Invalid prayer times from {self.api_name}: {err}"
-            ) from err
-
-        LOGGER.info(
-            "Successfully fetched prayer times from %s: Fajr=%s, Maghrib=%s",
-            self.api_name,
-            prayer_data.fajr,
-            prayer_data.maghrib,
-        )
-
-        return prayer_data
-
-    async def async_fetch_iqamah_times(
-        self, target_date: date
-    ) -> IqamahTimesData | None:
-        """Fetch iqamah times from WordPress-based APIs.
-
-        Only WordPress-based APIs (MCND, HICC, SDIC) provide iqamah times.
-
-        Args:
-            target_date: The date to fetch iqamah times for.
-
-        Returns:
-            IqamahTimesData or None if not available.
-        """
-        if self._api_config["type"] != "wordpress":
+    async def async_fetch_iqamah_times(self, target_date: date) -> IqamahTimesData | None:
+        """Fetch iqamah times; only dpt mosques publish them."""
+        if not self.supports_iqamah:
             return None
+        return (await self.async_fetch(target_date)).iqamah
 
-        url = self._api_config["url"]
-
-        try:
-            json_response = await self._fetch_json(url)
-            return self._parse_wordpress_iqamah(json_response, target_date)
-        except Exception as err:
-            LOGGER.warning(
-                "Failed to fetch iqamah times from %s: %s", self.api_name, err
-            )
-            return None
-
-    def _parse_icci_response(
-        self, json_response: dict, target_date: date
-    ) -> PrayerTimesData:
-        """Parse ICCI timetable API response.
-
-        ICCI returns a nested structure:
-        {
-            "timetable": {
-                "1": {  # month
-                    "1": [hour, minute] * 6,  # day: [fajr, sunrise, dhuhr, asr, maghrib, isha]
-                    ...
-                },
-                ...
-            }
-        }
-        """
-        timetable = json_response.get("timetable", {})
-
-        # ICCI uses non-zero-padded month/day
-        month_key = str(target_date.month)
-        day_key = str(target_date.day)
-
-        month_data = timetable.get(month_key, {})
-        day_prayers = month_data.get(day_key)
-
-        if not day_prayers:
-            raise ValueError(
-                f"No prayer times found for {target_date} in ICCI response"
-            )
-
-        if len(day_prayers) < 6:
-            raise ValueError(
-                f"Incomplete prayer times for {target_date}: expected 6, got {len(day_prayers)}"
-            )
-
-        def time_list_to_datetime(
-            time_list: list[int], is_next_day: bool = False
-        ) -> datetime:
-            """Convert [hour, minute] to UTC datetime."""
-            hour, minute = time_list[0], time_list[1]
-            dt = datetime(
-                year=target_date.year,
-                month=target_date.month,
-                day=target_date.day,
-                hour=hour,
-                minute=minute,
-                tzinfo=timezone.utc,
-            )
-            if is_next_day:
-                dt = dt + timedelta(days=1)
-            return dt
-
-        fajr = time_list_to_datetime(day_prayers[0])
-        sunrise = time_list_to_datetime(day_prayers[1])
-        dhuhr = time_list_to_datetime(day_prayers[2])
-        asr = time_list_to_datetime(day_prayers[3])
-        maghrib = time_list_to_datetime(day_prayers[4])
-        isha = time_list_to_datetime(day_prayers[5])
-
-        # Calculate midnight (midpoint between maghrib and next fajr)
-        midnight = maghrib + timedelta(hours=6)  # Approximate
-
-        return PrayerTimesData(
-            fajr=fajr,
-            sunrise=sunrise,
-            dhuhr=dhuhr,
-            asr=asr,
-            maghrib=maghrib,
-            isha=isha,
-            midnight=midnight,
-            sunset=maghrib,
-        )
-
-    def _parse_wordpress_response(
-        self, json_response: list | dict, target_date: date
-    ) -> PrayerTimesData:
-        """Parse WordPress Daily Prayer Time plugin response.
-
-        WordPress DPT plugin returns:
-        [
-            {
-                "fajr_begins": "06:45:00",
-                "fajr_jamah": "07:00:00",
-                "sunrise": "08:30:00",
-                "zuhr_begins": "12:30:00",
-                "zuhr_jamah": "13:30:00",
-                "asr_mithl_1": "14:45:00",
-                "asr_jamah": "15:30:00",
-                "maghrib_begins": "17:00:00",
-                "maghrib_jamah": "17:05:00",
-                "isha_begins": "18:30:00",
-                "isha_jamah": "19:30:00",
-                ...
-            }
-        ]
-        """
-        if isinstance(json_response, list):
-            if not json_response:
-                raise ValueError("Empty response from WordPress API")
-            prayers = json_response[0]
-        else:
-            prayers = json_response
-
-        def time_str_to_datetime(time_str: str, is_next_day: bool = False) -> datetime:
-            """Convert HH:MM:SS or HH:MM to UTC datetime."""
-            parts = time_str.split(":")
-            hour = int(parts[0])
-            minute = int(parts[1])
-
-            dt = datetime(
-                year=target_date.year,
-                month=target_date.month,
-                day=target_date.day,
-                hour=hour,
-                minute=minute,
-                tzinfo=timezone.utc,
-            )
-            if is_next_day:
-                dt = dt + timedelta(days=1)
-            return dt
-
-        # Map WordPress field names to standard names
-        fajr = time_str_to_datetime(prayers["fajr_begins"])
-        sunrise = time_str_to_datetime(prayers["sunrise"])
-        dhuhr = time_str_to_datetime(prayers["zuhr_begins"])
-        asr = time_str_to_datetime(prayers["asr_mithl_1"])
-        maghrib = time_str_to_datetime(prayers["maghrib_begins"])
-        isha = time_str_to_datetime(prayers["isha_begins"])
-
-        # Calculate midnight
-        midnight = maghrib + timedelta(hours=6)  # Approximate
-
-        return PrayerTimesData(
-            fajr=fajr,
-            sunrise=sunrise,
-            dhuhr=dhuhr,
-            asr=asr,
-            maghrib=maghrib,
-            isha=isha,
-            midnight=midnight,
-            sunset=maghrib,
-        )
-
-    def _parse_wordpress_iqamah(
-        self, json_response: list | dict, target_date: date
-    ) -> IqamahTimesData:
-        """Parse iqamah times from WordPress response."""
-        if isinstance(json_response, list):
-            if not json_response:
-                return IqamahTimesData()
-            prayers = json_response[0]
-        else:
-            prayers = json_response
-
-        def time_str_to_datetime(time_str: str | None) -> datetime | None:
-            """Convert HH:MM:SS or HH:MM to UTC datetime."""
-            if not time_str:
-                return None
-
-            try:
-                parts = time_str.split(":")
-                hour = int(parts[0])
-                minute = int(parts[1])
-
-                return datetime(
-                    year=target_date.year,
-                    month=target_date.month,
-                    day=target_date.day,
-                    hour=hour,
-                    minute=minute,
-                    tzinfo=timezone.utc,
-                )
-            except (ValueError, IndexError):
-                return None
-
-        return IqamahTimesData(
-            fajr=time_str_to_datetime(prayers.get("fajr_jamah")),
-            dhuhr=time_str_to_datetime(prayers.get("zuhr_jamah")),
-            asr=time_str_to_datetime(prayers.get("asr_jamah")),
-            maghrib=time_str_to_datetime(prayers.get("maghrib_jamah")),
-            isha=time_str_to_datetime(prayers.get("isha_jamah")),
-            juma=time_str_to_datetime(prayers.get("jumuah_time")),
-        )
+    # --- Capabilities ---------------------------------------------------------
 
     async def async_search_mosques(
-        self, latitude: float, longitude: float, radius_km: float = 10
+        self,
+        latitude: float,
+        longitude: float,
+        radius_km: float = 10,  # noqa: ARG002 - interface argument, the registry is small
     ) -> list[MosqueInfo]:
-        """Return list of Ireland mosques.
-
-        This provider doesn't do distance-based search, just returns
-        all known Ireland mosques.
-        """
-        return [api["mosque_info"] for api in IRELAND_APIS.values()]
+        """Return every registered mosque, nearest to the given point first."""
+        return [mosque_info(m) for m, _ in mosques_by_distance(latitude, longitude)]
 
     @property
     def supports_iqamah(self) -> bool:
-        """WordPress-based APIs support iqamah times."""
-        return self._api_config["type"] == "wordpress"
+        """Dpt mosques publish jamah (iqamah) times."""
+        return self.mosque.supports_iqamah
+
+    @property
+    def supports_jumuah(self) -> bool:
+        """Return True if the mosque publishes its Jumu'ah times."""
+        return self.mosque.jumuah_auto
 
     @property
     def supports_mosque_search(self) -> bool:
-        """Ireland provider supports mosque listing."""
+        """The registry can be listed."""
         return True
 
-    async def close(self) -> None:
-        """Close the aiohttp session if we own it."""
-        if self._owns_session and self._session is not None:
-            await self._session.close()
-            self._session = None
-            self._owns_session = False
+    @property
+    def supports_any_date(self) -> bool:
+        """Only the bundled timetable covers arbitrary dates."""
+        return self.mosque.supports_any_date

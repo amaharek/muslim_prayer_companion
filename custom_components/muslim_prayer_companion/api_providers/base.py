@@ -4,16 +4,43 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
+from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from aiohttp import ClientSession
+
+
+def local_clock_to_utc(day: date, hour: int, minute: int, tz: ZoneInfo) -> datetime:
+    """Combine a day and a wall-clock time in ``tz`` into a UTC datetime."""
+    return datetime.combine(day, time(hour, minute), tzinfo=tz).astimezone(UTC)
+
+
+def ensure_after(value: datetime, reference: datetime) -> datetime:
+    """Return ``value`` moved forward by one day if it is not after ``reference``."""
+    if value <= reference:
+        return value + timedelta(days=1)
+    return value
+
+
+def midpoint(start: datetime, end: datetime) -> datetime:
+    """
+    Return the instant halfway between two aware datetimes, to the minute.
+
+    The arithmetic is done in UTC so a DST change between the two instants is
+    counted correctly; the result is floored to the minute like a timetable.
+    """
+    start_utc = start.astimezone(UTC)
+    middle = start_utc + (end.astimezone(UTC) - start_utc) / 2
+    return middle.replace(second=0, microsecond=0)
 
 
 @dataclass
 class PrayerTimesData:
-    """Standardized prayer times - all providers MUST populate these fields.
+    """
+    Standardized prayer times - all providers MUST populate these fields.
 
     All datetime fields must be timezone-aware (UTC).
     """
@@ -27,9 +54,11 @@ class PrayerTimesData:
     midnight: datetime | None = None
     imsak: datetime | None = None
     sunset: datetime | None = None
+    source: str | None = None
 
     def validate(self) -> None:
-        """Validate prayer times are in correct order and timezone-aware.
+        """
+        Validate prayer times are in correct order and timezone-aware.
 
         Raises:
             AssertionError: If validation fails.
@@ -43,33 +72,31 @@ class PrayerTimesData:
             ("isha", self.isha),
         ]
 
-        # Check all required times are timezone-aware
-        for name, time in required_times:
-            if time.tzinfo is None:
-                raise AssertionError(
-                    f"Prayer time '{name}' must be timezone-aware, got naive datetime"
-                )
+        for name, value in required_times:
+            if value.tzinfo is None:
+                msg = f"Prayer time '{name}' must be timezone-aware, got naive datetime"
+                raise AssertionError(msg)
 
-        # Check chronological order
         times = [t for _, t in required_times]
         for i in range(len(times) - 1):
             if times[i] >= times[i + 1]:
-                raise AssertionError(
+                msg = (
                     f"Prayer times out of order: {required_times[i][0]} ({times[i]}) "
-                    f">= {required_times[i+1][0]} ({times[i+1]})"
+                    f">= {required_times[i + 1][0]} ({times[i + 1]})"
                 )
+                raise AssertionError(msg)
 
-        # Validate optional times if present
         if self.midnight is not None and self.midnight.tzinfo is None:
-            raise AssertionError("Midnight time must be timezone-aware")
+            msg = "Midnight time must be timezone-aware"
+            raise AssertionError(msg)
 
         if self.imsak is not None:
             if self.imsak.tzinfo is None:
-                raise AssertionError("Imsak time must be timezone-aware")
+                msg = "Imsak time must be timezone-aware"
+                raise AssertionError(msg)
             if self.imsak >= self.fajr:
-                raise AssertionError(
-                    f"Imsak ({self.imsak}) must be before Fajr ({self.fajr})"
-                )
+                msg = f"Imsak ({self.imsak}) must be before Fajr ({self.fajr})"
+                raise AssertionError(msg)
 
     def to_dict(self) -> dict[str, datetime]:
         """Convert to dictionary with Home Assistant compatible keys."""
@@ -88,18 +115,20 @@ class PrayerTimesData:
         if self.imsak is not None:
             result["Imsak"] = self.imsak
 
-        if self.sunset is not None:
-            result["Sunset"] = self.sunset
-        else:
-            # Sunset is typically same as Maghrib
-            result["Sunset"] = self.maghrib
+        # Sunset is typically the same as Maghrib
+        result["Sunset"] = self.sunset if self.sunset is not None else self.maghrib
 
         return result
+
+    def get(self, key: str) -> datetime | None:
+        """Return a time by its Home Assistant key (``"Fajr"``, ``"Midnight"``...)."""
+        return self.to_dict().get(key)
 
 
 @dataclass
 class IqamahTimesData:
-    """Standardized iqamah times.
+    """
+    Standardized iqamah times.
 
     All datetime fields must be timezone-aware (UTC) if set.
     """
@@ -113,7 +142,8 @@ class IqamahTimesData:
     juma_khutbah: datetime | None = None
 
     def validate(self) -> None:
-        """Validate iqamah times are timezone-aware.
+        """
+        Validate iqamah times are timezone-aware.
 
         Raises:
             AssertionError: If validation fails.
@@ -128,15 +158,14 @@ class IqamahTimesData:
             ("juma_khutbah", self.juma_khutbah),
         ]
 
-        for name, time in times:
-            if time is not None and time.tzinfo is None:
-                raise AssertionError(
-                    f"Iqamah time '{name}' must be timezone-aware, got naive datetime"
-                )
+        for name, value in times:
+            if value is not None and value.tzinfo is None:
+                msg = f"Iqamah time '{name}' must be timezone-aware, got naive datetime"
+                raise AssertionError(msg)
 
     def to_dict(self) -> dict[str, datetime]:
         """Convert to dictionary with Home Assistant compatible keys."""
-        result = {}
+        result: dict[str, datetime] = {}
 
         if self.fajr is not None:
             result["iqamah_Fajr"] = self.fajr
@@ -155,6 +184,31 @@ class IqamahTimesData:
 
         return result
 
+    def get(self, prayer: str) -> datetime | None:
+        """Return the iqamah time for a prayer name such as ``"Fajr"``."""
+        return getattr(self, prayer.lower(), None)
+
+
+@dataclass(frozen=True)
+class JumuahTime:
+    """One Jumu'ah (Friday prayer) session, as wall-clock time at the mosque."""
+
+    clock: time
+    label: str | None = None
+
+
+@dataclass
+class ProviderResult:
+    """Everything a provider knows about one day, fetched in a single call."""
+
+    today: PrayerTimesData
+    tomorrow: PrayerTimesData | None = None
+    iqamah: IqamahTimesData | None = None
+    iqamah_tomorrow: IqamahTimesData | None = None
+    jumuah: list[JumuahTime] = field(default_factory=list)
+    source: str = "unknown"
+    raw: Any = None
+
 
 @dataclass
 class MosqueInfo:
@@ -169,6 +223,7 @@ class MosqueInfo:
     country: str | None = None
     website: str | None = None
     timezone: str | None = None
+    short_name: str | None = None
 
 
 @dataclass
@@ -184,16 +239,19 @@ class ProviderConfig:
 
 
 class PrayerTimesProvider(ABC):
-    """Abstract base class for prayer times providers.
+    """
+    Abstract base class for prayer times providers.
 
     All providers must implement this interface to ensure consistent
     data formats across different data sources.
     """
 
     name: str = "base"
+    source_id: str = "unknown"
 
-    def __init__(self, config: ProviderConfig, session: ClientSession | None = None):
-        """Initialize the provider.
+    def __init__(self, config: ProviderConfig, session: ClientSession | None = None) -> None:
+        """
+        Initialize the provider.
 
         Args:
             config: Provider configuration.
@@ -204,7 +262,8 @@ class PrayerTimesProvider(ABC):
 
     @abstractmethod
     async def async_fetch_prayer_times(self, target_date: date) -> PrayerTimesData:
-        """Fetch prayer times for a specific date.
+        """
+        Fetch prayer times for a specific date.
 
         Args:
             target_date: The date to fetch prayer times for.
@@ -216,37 +275,39 @@ class PrayerTimesProvider(ABC):
             ProviderError: If fetching fails.
         """
 
-    async def async_fetch_iqamah_times(
-        self, target_date: date
-    ) -> IqamahTimesData | None:
-        """Fetch iqamah times for a specific date.
+    async def async_fetch_iqamah_times(self, target_date: date) -> IqamahTimesData | None:
+        """
+        Fetch iqamah times for a specific date.
 
         Default implementation returns None. Override in providers
         that support iqamah times.
-
-        Args:
-            target_date: The date to fetch iqamah times for.
-
-        Returns:
-            IqamahTimesData or None if not supported.
         """
         return None
+
+    async def async_fetch(self, target_date: date) -> ProviderResult:
+        """
+        Fetch everything for ``target_date`` and, best effort, the day after.
+
+        The default composes the single-day methods; providers that get all
+        of it from one request override this to fetch once.
+        """
+        today = await self.async_fetch_prayer_times(target_date)
+        tomorrow: PrayerTimesData | None
+        try:
+            tomorrow = await self.async_fetch_prayer_times(target_date + timedelta(days=1))
+        except ProviderError:
+            tomorrow = None
+        iqamah = await self.async_fetch_iqamah_times(target_date) if self.supports_iqamah else None
+        return ProviderResult(today=today, tomorrow=tomorrow, iqamah=iqamah, source=self.source_id)
 
     async def async_search_mosques(
         self, latitude: float, longitude: float, radius_km: float = 10
     ) -> list[MosqueInfo]:
-        """Search for mosques near a location.
+        """
+        Search for mosques near a location.
 
         Default implementation returns empty list. Override in providers
         that support mosque search.
-
-        Args:
-            latitude: Latitude of search center.
-            longitude: Longitude of search center.
-            radius_km: Search radius in kilometers.
-
-        Returns:
-            List of MosqueInfo objects.
         """
         return []
 
@@ -256,8 +317,18 @@ class PrayerTimesProvider(ABC):
         return False
 
     @property
+    def supports_jumuah(self) -> bool:
+        """Return True if this provider publishes Jumu'ah times."""
+        return False
+
+    @property
     def supports_mosque_search(self) -> bool:
         """Return True if this provider supports mosque search."""
+        return False
+
+    @property
+    def supports_any_date(self) -> bool:
+        """Return True if the provider can produce times for an arbitrary date."""
         return False
 
 

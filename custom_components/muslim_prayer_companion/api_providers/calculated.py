@@ -1,20 +1,30 @@
-"""Calculated prayer times provider using prayer-times-calculator library."""
+"""
+Calculated prayer times provider using prayer-times-calculator-offline.
+
+The library is the one Home Assistant's core ``islamic_prayer_times``
+integration uses: it computes everything locally (no network) and, with
+``iso8601=True``, returns timezone-aware ISO strings in UTC.
+"""
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, date, datetime, time, timedelta
 import logging
-from datetime import date, datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from prayer_times_calculator import PrayerTimesCalculator, exceptions
+from prayer_times_calculator_offline import PrayerTimesCalculator
 
+from ..const import DEFAULT_CALC_METHOD, STANDARD_CALC_METHODS
 from .base import (
     PrayerTimesData,
     PrayerTimesProvider,
     ProviderConfig,
-    ProviderConnectionError,
     ProviderResponseError,
+    ProviderResult,
     ProviderValidationError,
+    ensure_after,
 )
 
 if TYPE_CHECKING:
@@ -22,203 +32,149 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
-# Mapping of our method names to prayer-times-calculator method names
-CALCULATION_METHODS = {
-    "jafari": "jafari",
-    "karachi": "karachi",
-    "isna": "isna",
-    "mwl": "mwl",
-    "makkah": "makkah",
-    "egypt": "egypt",
-    "tehran": "tehran",
-    "gulf": "gulf",
-    "kuwait": "kuwait",
-    "qatar": "qatar",
-    "singapore": "singapore",
-    "france": "france",
-    "turkey": "turkey",
-    "russia": "russia",
-}
+MIN_TIME_PARTS = 2
+
+
+def parse_calculated_time(value: Any, target_date: date, tz: ZoneInfo) -> datetime:
+    """
+    Parse one value from the calculator into a UTC datetime.
+
+    Accepts an ISO 8601 string with an offset (the ``iso8601=True`` output) or a
+    bare ``"HH:MM"`` wall-clock string in ``tz``.
+    """
+    if not isinstance(value, str) or not value:
+        msg = f"expected a time string, got {value!r}"
+        raise ValueError(msg)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        parts = value.split(":")
+        if len(parts) < MIN_TIME_PARTS:
+            msg = f"invalid time {value!r}"
+            raise ValueError(msg) from None
+        clock = time(int(parts[0]), int(parts[1]))
+        return datetime.combine(target_date, clock, tzinfo=tz).astimezone(UTC)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tz)
+    return parsed.astimezone(UTC)
+
+
+def parse_calculated_times(
+    raw: dict[str, Any], target_date: date, tz: ZoneInfo, source: str
+) -> PrayerTimesData:
+    """Parse the calculator's result dictionary into PrayerTimesData."""
+    maghrib = parse_calculated_time(raw["Maghrib"], target_date, tz)
+    data = PrayerTimesData(
+        fajr=parse_calculated_time(raw["Fajr"], target_date, tz),
+        sunrise=parse_calculated_time(raw["Sunrise"], target_date, tz),
+        dhuhr=parse_calculated_time(raw["Dhuhr"], target_date, tz),
+        asr=parse_calculated_time(raw["Asr"], target_date, tz),
+        maghrib=maghrib,
+        isha=ensure_after(parse_calculated_time(raw["Isha"], target_date, tz), maghrib),
+        source=source,
+    )
+    if raw.get("Sunset"):
+        data.sunset = parse_calculated_time(raw["Sunset"], target_date, tz)
+    if raw.get("Midnight"):
+        data.midnight = ensure_after(
+            parse_calculated_time(raw["Midnight"], target_date, tz), maghrib
+        )
+    return data
 
 
 class CalculatedProvider(PrayerTimesProvider):
-    """Provider that calculates prayer times using prayer-times-calculator library."""
+    """Provider that calculates prayer times locally."""
 
     name = "calculated"
 
-    def __init__(self, config: ProviderConfig, session: ClientSession | None = None):
-        """Initialize the calculated provider.
+    def __init__(self, config: ProviderConfig, session: ClientSession | None = None) -> None:
+        """
+        Initialize the calculated provider.
 
         Args:
-            config: Provider configuration with latitude, longitude, and calculation_method.
-            session: Optional aiohttp ClientSession (not used by this provider).
+            config: Provider configuration with latitude, longitude,
+                calculation_method and timezone.
+            session: Unused; accepted for interface compatibility.
         """
         super().__init__(config, session)
 
-        # Validate calculation method
         method = config.calculation_method.lower()
-        if method not in CALCULATION_METHODS:
+        if method not in STANDARD_CALC_METHODS:
             LOGGER.warning(
-                "Unknown calculation method '%s', defaulting to 'isna'",
+                "Unknown calculation method '%s', defaulting to '%s'",
                 config.calculation_method,
+                DEFAULT_CALC_METHOD,
             )
-            self._method = "isna"
-        else:
-            self._method = CALCULATION_METHODS[method]
+            method = DEFAULT_CALC_METHOD
+        self._method = method
+        self.source_id = f"calculated:{method}"
+        self.fallback_source_id = f"calculated-fallback:{method}"
+        try:
+            self._tz = ZoneInfo(config.timezone)
+        except (ZoneInfoNotFoundError, ValueError, TypeError):
+            LOGGER.warning("Unknown time zone %r, using UTC", config.timezone)
+            self._tz = ZoneInfo("UTC")
+
+    @property
+    def method(self) -> str:
+        """Return the calculation method actually in use."""
+        return self._method
+
+    def _calculate(self, target_date: date) -> dict[str, Any]:
+        """Run the calculator for one day (blocking, CPU only)."""
+        calc = PrayerTimesCalculator(
+            latitude=self.config.latitude,
+            longitude=self.config.longitude,
+            calculation_method=self._method,
+            date=str(target_date),
+            iso8601=True,
+        )
+        return calc.fetch_prayer_times()
+
+    def _calculate_days(self, *days: date) -> list[dict[str, Any]]:
+        """Run the calculator for several days in one executor hop."""
+        return [self._calculate(day) for day in days]
+
+    def _parse(self, raw: dict[str, Any], target_date: date) -> PrayerTimesData:
+        """Parse and validate one day's raw result."""
+        try:
+            data = parse_calculated_times(raw, target_date, self._tz, self.source_id)
+        except (KeyError, ValueError, TypeError) as err:
+            msg = f"Invalid prayer times format: {err}"
+            raise ProviderResponseError(msg) from err
+        try:
+            data.validate()
+        except AssertionError as err:
+            msg = f"Prayer times validation failed: {err}"
+            raise ProviderValidationError(msg) from err
+        return data
 
     async def async_fetch_prayer_times(self, target_date: date) -> PrayerTimesData:
-        """Fetch prayer times using the prayer-times-calculator library.
-
-        Args:
-            target_date: The date to calculate prayer times for.
-
-        Returns:
-            PrayerTimesData with all prayer times in UTC.
-
-        Raises:
-            ProviderConnectionError: If calculation fails due to connection issues.
-            ProviderResponseError: If the library returns invalid data.
-            ProviderValidationError: If the calculated times fail validation.
-        """
-        LOGGER.debug(
-            "Calculating prayer times for %s at (%s, %s) using method '%s'",
-            target_date,
-            self.config.latitude,
-            self.config.longitude,
-            self._method,
-        )
-
+        """Calculate prayer times for one date."""
         try:
-            calc = PrayerTimesCalculator(
-                latitude=self.config.latitude,
-                longitude=self.config.longitude,
-                calculation_method=self._method,
-                date=str(target_date),
-            )
-            raw_times = calc.fetch_prayer_times()
-        except exceptions.InvalidResponseError as err:
-            LOGGER.error("Invalid response from prayer calculator: %s", err)
-            raise ProviderConnectionError(
-                f"Failed to calculate prayer times: {err}"
-            ) from err
+            raw = await asyncio.to_thread(self._calculate, target_date)
         except Exception as err:
-            LOGGER.error("Unexpected error calculating prayer times: %s", err)
-            raise ProviderResponseError(f"Prayer calculation failed: {err}") from err
+            msg = f"Prayer calculation failed: {err}"
+            raise ProviderResponseError(msg) from err
+        return self._parse(raw, target_date)
 
-        LOGGER.debug("Raw prayer times from calculator: %s", raw_times)
-
+    async def async_fetch(self, target_date: date) -> ProviderResult:
+        """Calculate today and tomorrow in a single executor hop."""
+        tomorrow_date = target_date + timedelta(days=1)
         try:
-            prayer_data = self._parse_times(raw_times, target_date)
-        except (KeyError, ValueError) as err:
-            LOGGER.error("Failed to parse prayer times: %s", err)
-            raise ProviderResponseError(f"Invalid prayer times format: {err}") from err
-
-        try:
-            prayer_data.validate()
-        except AssertionError as err:
-            LOGGER.error("Prayer times validation failed: %s", err)
-            raise ProviderValidationError(
-                f"Prayer times validation failed: {err}"
-            ) from err
-
-        LOGGER.debug(
-            "Calculated prayer times: Fajr=%s, Dhuhr=%s, Maghrib=%s",
-            prayer_data.fajr,
-            prayer_data.dhuhr,
-            prayer_data.maghrib,
-        )
-
-        return prayer_data
-
-    def _parse_times(self, raw_times: dict, target_date: date) -> PrayerTimesData:
-        """Parse raw time strings into PrayerTimesData.
-
-        Args:
-            raw_times: Dictionary with prayer names as keys and "HH:MM" strings as values.
-            target_date: The date for the prayer times.
-
-        Returns:
-            PrayerTimesData with UTC datetimes.
-        """
-
-        def parse_time_str(time_str: str, prayer_name: str) -> datetime:
-            """Parse HH:MM string to UTC datetime."""
-            if not isinstance(time_str, str):
-                raise ValueError(
-                    f"Expected string for {prayer_name}, got {type(time_str)}"
-                )
-
-            parts = time_str.split(":")
-            if len(parts) < 2:
-                raise ValueError(f"Invalid time format for {prayer_name}: {time_str}")
-
-            hour = int(parts[0])
-            minute = int(parts[1])
-
-            # Create local datetime
-            local_dt = datetime(
-                year=target_date.year,
-                month=target_date.month,
-                day=target_date.day,
-                hour=hour,
-                minute=minute,
+            raw_today, raw_tomorrow = await asyncio.to_thread(
+                self._calculate_days, target_date, tomorrow_date
             )
-
-            # For now, treat as UTC since the library already adjusts for timezone
-            # The coordinator will handle local/UTC conversion based on HA timezone
-            return local_dt.replace(tzinfo=timezone.utc)
-
-        # Parse required prayer times
-        fajr = parse_time_str(raw_times.get("Fajr", ""), "Fajr")
-        sunrise = parse_time_str(raw_times.get("Sunrise", ""), "Sunrise")
-        dhuhr = parse_time_str(raw_times.get("Dhuhr", ""), "Dhuhr")
-        asr = parse_time_str(raw_times.get("Asr", ""), "Asr")
-        maghrib = parse_time_str(raw_times.get("Maghrib", ""), "Maghrib")
-        isha = parse_time_str(raw_times.get("Isha", ""), "Isha")
-
-        # Parse optional times
-        midnight = None
-        if "Midnight" in raw_times:
-            try:
-                midnight = parse_time_str(raw_times["Midnight"], "Midnight")
-                # Midnight may need to be on the next day
-                if midnight < fajr:
-                    midnight = midnight + timedelta(days=1)
-            except (ValueError, KeyError):
-                LOGGER.debug("Could not parse Midnight time, skipping")
-
-        sunset = None
-        if "Sunset" in raw_times:
-            try:
-                sunset = parse_time_str(raw_times["Sunset"], "Sunset")
-            except (ValueError, KeyError):
-                LOGGER.debug("Could not parse Sunset time, using Maghrib")
-
-        imsak = None
-        if "Imsak" in raw_times:
-            try:
-                imsak = parse_time_str(raw_times["Imsak"], "Imsak")
-            except (ValueError, KeyError):
-                LOGGER.debug("Could not parse Imsak time, skipping")
-
-        return PrayerTimesData(
-            fajr=fajr,
-            sunrise=sunrise,
-            dhuhr=dhuhr,
-            asr=asr,
-            maghrib=maghrib,
-            isha=isha,
-            midnight=midnight,
-            sunset=sunset,
-            imsak=imsak,
+        except Exception as err:
+            msg = f"Prayer calculation failed: {err}"
+            raise ProviderResponseError(msg) from err
+        return ProviderResult(
+            today=self._parse(raw_today, target_date),
+            tomorrow=self._parse(raw_tomorrow, tomorrow_date),
+            source=self.source_id,
         )
 
     @property
-    def supports_iqamah(self) -> bool:
-        """Calculated provider does not support iqamah times."""
-        return False
-
-    @property
-    def supports_mosque_search(self) -> bool:
-        """Calculated provider does not support mosque search."""
-        return False
+    def supports_any_date(self) -> bool:
+        """The calculator works for any date."""
+        return True
