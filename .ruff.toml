@@ -1,26 +1,77 @@
-# The contents of this file is based on https://github.com/home-assistant/core/blob/dev/pyproject.toml
+# Based on https://github.com/home-assistant/core/blob/dev/pyproject.toml
 
-target-version = "py312"
+target-version = "py313"
+line-length = 100
 
 [lint]
-select = [
-    "ALL",
-]
+select = ["ALL"]
 
 ignore = [
-    "ANN101", # Missing type annotation for `self` in method
     "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
-    "D203", # no-blank-line-before-class (incompatible with formatter)
-    "D212", # multi-line-summary-first-line (incompatible with formatter)
     "COM812", # incompatible with formatter
+    "CPY001", # no copyright headers in this repository
+    "TID252", # relative imports from parent packages are the norm in this integration
+    "D202",   # No blank lines allowed after function docstring
+    "D203",   # no-blank-line-before-class (incompatible with formatter)
+    "D212",   # multi-line-summary-first-line (incompatible with formatter)
+    "D413",   # Missing blank line after last section
+    "E501",   # line too long (the formatter wraps what it can)
+    "EM101",  # raw string in exception
+    "EM102",  # f-string in exception
     "ISC001", # incompatible with formatter
+    "PLR0911", # too many return statements
+    "PLR0912", # too many branches
+    "PLR0913", # too many arguments
+    "PLR0915", # too many statements
+    "PLR2004", # magic value comparison
+    "TRY003",  # long messages outside the exception class
+    "TRY400",  # use logging.exception
+]
+
+[lint.per-file-ignores]
+"tests/**" = [
+    "ANN",     # annotations are optional in tests
+    "ARG001",  # unused fixture arguments
+    "ARG002",
+    "D1",      # docstrings are optional in tests
+    "D401",    # fixture docstrings describe the value, not an action
+    "DTZ001",  # naive datetimes are fine in tests
+    "FBT",     # boolean positional values
+    "INP001",
+    "PLR0915",
+    "PLR0917", # many fixtures as positional arguments
+    "PT011",   # broad pytest.raises
+    "S101",    # assert
+    "S105",
+    "S106",
+    "SLF001",  # private member access
+    "TC001",   # fixtures are injected at runtime, not only type-checked
+    "TC002",
+    "TC003",
+]
+"custom_components/muslim_prayer_companion/api_providers/base.py" = [
+    "ARG002",  # interface defaults keep the abstract signature
+]
+"scripts/**" = [
+    "EXE001",
+    "INP001",
+    "S310",    # urllib.request.urlopen with https URLs
+    "T201",    # print
 ]
 
 [lint.flake8-pytest-style]
 fixture-parentheses = false
+
+[lint.isort]
+known-first-party = ["custom_components.muslim_prayer_companion", "tests"]
+force-sort-within-sections = true
+combine-as-imports = true
 
 [lint.pyupgrade]
 keep-runtime-typing = true
 
 [lint.mccabe]
 max-complexity = 25
+
+[format]
+docstring-code-format = true

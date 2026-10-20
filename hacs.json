@@ -1,7 +1,6 @@
 {
   "name": "Muslim Prayer Companion",
   "render_readme": true,
-  "domains": ["sensor"],
   "homeassistant": "2025.2.4",
   "hacs": "2.0.1",
   "zip_release": true,

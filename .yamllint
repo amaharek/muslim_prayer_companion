@@ -1,5 +1,9 @@
 extends: default
 
+# GitHub issue forms hold long description strings that cannot be wrapped.
+ignore: |
+  .github/ISSUE_TEMPLATE/
+
 rules:
   document-start: disable
   indentation:
@@ -7,4 +11,4 @@ rules:
   truthy:
     allowed-values: ['true', 'false', 'on']
   line-length:
-    max: 120140
+    max: 140

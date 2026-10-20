@@ -1,29 +1,36 @@
-name: "Release"
+name: Release
 
 on:
   release:
     types:
-      - "published"
+      - published
 
 permissions: {}
 
 jobs:
   release:
-    name: "Release"
-    runs-on: "ubuntu-latest"
+    name: Release
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: "Checkout the repository"
-        uses: "actions/checkout@v4.2.2"
+      - name: Check out the repository
+        uses: actions/checkout@v4
 
-      - name: "ZIP the integration directory"
-        shell: "bash"
+      - name: Set the manifest version from the release tag
+        shell: bash
+        run: |
+          yq -i -o json '.version = "${{ github.event.release.tag_name }}"' \
+            custom_components/muslim_prayer_companion/manifest.json
+          cat custom_components/muslim_prayer_companion/manifest.json
+
+      - name: ZIP the integration directory
+        shell: bash
         run: |
           cd "${{ github.workspace }}/custom_components/muslim_prayer_companion"
-          zip muslim_prayer_companion.zip -r ./
+          zip -r "${{ github.workspace }}/muslim_prayer_companion.zip" ./ -x "*/__pycache__/*" "*.pyc"
 
-      - name: "Upload the ZIP file to the release"
-        uses: "softprops/action-gh-release@v2.0.8"
+      - name: Upload the ZIP file to the release
+        uses: softprops/action-gh-release@v2
         with:
-          files: ${{ github.workspace }}/custom_components/muslim_prayer_companion/muslim_prayer_companion.zip
+          files: ${{ github.workspace }}/muslim_prayer_companion.zip

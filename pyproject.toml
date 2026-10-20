@@ -1,31 +1,31 @@
 [project]
 name = "muslim-prayer-companion"
-version = "3.0.0"
-description = "Muslim Prayer Companion for Home Assistant - provides prayer times, Iqamah times, Hijri calendar, and Islamic companion features"
+version = "4.0.0"
+description = "Muslim Prayer Companion for Home Assistant - prayer times, Iqamah, Friday prayers, Hijri calendar and Islamic companion sensors"
 authors = [
     {name = "Abdelrahman Maharek", email = "abdelrahman.mahareek@gmail.com"}
 ]
 license = {text = "Apache-2.0"}
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+# Home Assistant 2025.2 (the minimum in hacs.json) already requires Python 3.13.
+requires-python = ">=3.13"
 
+# Must match custom_components/muslim_prayer_companion/manifest.json (tests check it).
 dependencies = [
-    "prayer-times-calculator>=0.0.12",
-    "hijri-converter>=2.3.1",
+    "prayer-times-calculator-offline==1.0.3",
+    "hijridate==2.3.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "homeassistant>=2024.10.3",
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "pytest-homeassistant-custom-component>=0.13.174",
-    "pytest-cov>=4.0",
-    "ruff>=0.9",
-    "pre-commit>=3.0",
-    "black>=21.12b0",
-    "codespell>=2.0.0",
-    "yamllint>=1.26.0",
+    "homeassistant>=2025.2.4",
+    # Brings pytest, pytest-asyncio, pytest-cov, pytest-socket, pytest-timeout,
+    # freezegun/pytest-freezer and syrupy, pinned to the Home Assistant version.
+    "pytest-homeassistant-custom-component>=0.13.214",
+    "ruff==0.17.1",
+    "pre-commit>=4.0",
+    "codespell>=2.4",
+    "yamllint>=1.35",
 ]
 
 [build-system]
@@ -39,13 +39,27 @@ packages = ["custom_components/muslim_prayer_companion"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-p no:sugar --strict-markers --timeout=60"
+filterwarnings = [
+    # prayer-times-calculator-offline passes re.split's maxsplit positionally.
+    "ignore:'maxsplit' is passed as positional argument:DeprecationWarning",
+]
 
-# Ruff config is in .ruff.toml (takes precedence)
+[tool.coverage.run]
+source = ["custom_components/muslim_prayer_companion"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = false
+
+# Ruff config is in .ruff.toml
 
 [tool.codespell]
-skip = "./.*,*.csv,*.json,*.lock"
+skip = "./.*,*.csv,*.json,*.lock,./tests/fixtures/*"
 quiet-level = 2
-ignore-words-list = "hass"
+# "ist": Irish Summer Time in the bundled timetable's source note; "nd": ordinal suffix regex.
+ignore-words-list = "hass,ist,nd"
 
 [tool.bandit]
-skips = ["B101", "B404", "B603"]
+skips = ["B101", "B404", "B603", "B310"]
