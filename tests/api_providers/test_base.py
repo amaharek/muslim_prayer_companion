@@ -1,6 +1,6 @@
 """Test cases for base API provider classes and data models."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -15,16 +15,14 @@ from custom_components.muslim_prayer_companion.api_providers.base import (
 class TestPrayerTimesData:
     """Test PrayerTimesData validation and conversion."""
 
-    def test_valid_prayer_times_pass_validation(
-        self, sample_prayer_times: PrayerTimesData
-    ):
+    def test_valid_prayer_times_pass_validation(self, sample_prayer_times: PrayerTimesData):
         """Valid prayer times should pass validation."""
         # Should not raise
         sample_prayer_times.validate()
 
     def test_prayer_times_out_of_order_fails(self):
         """Prayer times out of chronological order should fail validation."""
-        base_date = date.today()
+        base_date = date(2026, 10, 20)
         data = PrayerTimesData(
             fajr=datetime(
                 base_date.year,
@@ -32,7 +30,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 5,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             sunrise=datetime(
                 base_date.year,
@@ -40,7 +38,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 4,
                 0,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),  # Before fajr!
             dhuhr=datetime(
                 base_date.year,
@@ -48,7 +46,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 12,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             asr=datetime(
                 base_date.year,
@@ -56,7 +54,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 15,
                 45,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             maghrib=datetime(
                 base_date.year,
@@ -64,7 +62,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 18,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             isha=datetime(
                 base_date.year,
@@ -72,7 +70,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 20,
                 0,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
         )
 
@@ -81,18 +79,16 @@ class TestPrayerTimesData:
 
     def test_naive_datetime_rejected(self):
         """Timezone-naive datetimes should fail validation."""
-        base_date = date.today()
+        base_date = date(2026, 10, 20)
         data = PrayerTimesData(
-            fajr=datetime(
-                base_date.year, base_date.month, base_date.day, 5, 30
-            ),  # No timezone!
+            fajr=datetime(base_date.year, base_date.month, base_date.day, 5, 30),  # No timezone!
             sunrise=datetime(
                 base_date.year,
                 base_date.month,
                 base_date.day,
                 7,
                 15,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             dhuhr=datetime(
                 base_date.year,
@@ -100,7 +96,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 12,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             asr=datetime(
                 base_date.year,
@@ -108,7 +104,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 15,
                 45,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             maghrib=datetime(
                 base_date.year,
@@ -116,7 +112,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 18,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             isha=datetime(
                 base_date.year,
@@ -124,7 +120,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 20,
                 0,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
         )
 
@@ -133,7 +129,7 @@ class TestPrayerTimesData:
 
     def test_imsak_after_fajr_fails(self):
         """Imsak time after Fajr should fail validation."""
-        base_date = date.today()
+        base_date = date(2026, 10, 20)
         data = PrayerTimesData(
             fajr=datetime(
                 base_date.year,
@@ -141,7 +137,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 5,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             sunrise=datetime(
                 base_date.year,
@@ -149,7 +145,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 7,
                 15,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             dhuhr=datetime(
                 base_date.year,
@@ -157,7 +153,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 12,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             asr=datetime(
                 base_date.year,
@@ -165,7 +161,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 15,
                 45,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             maghrib=datetime(
                 base_date.year,
@@ -173,7 +169,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 18,
                 30,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             isha=datetime(
                 base_date.year,
@@ -181,7 +177,7 @@ class TestPrayerTimesData:
                 base_date.day,
                 20,
                 0,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),
             imsak=datetime(
                 base_date.year,
@@ -189,16 +185,14 @@ class TestPrayerTimesData:
                 base_date.day,
                 6,
                 0,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             ),  # After fajr!
         )
 
-        with pytest.raises(AssertionError, match="Imsak.*before Fajr"):
+        with pytest.raises(AssertionError, match=r"Imsak.*before Fajr"):
             data.validate()
 
-    def test_to_dict_returns_ha_compatible_keys(
-        self, sample_prayer_times: PrayerTimesData
-    ):
+    def test_to_dict_returns_ha_compatible_keys(self, sample_prayer_times: PrayerTimesData):
         """to_dict should return Home Assistant compatible keys."""
         result = sample_prayer_times.to_dict()
 
@@ -212,7 +206,7 @@ class TestPrayerTimesData:
         assert "Sunset" in result
 
         # Values should be datetime objects
-        for key, value in result.items():
+        for value in result.values():
             assert isinstance(value, datetime)
             assert value.tzinfo is not None
 
@@ -220,27 +214,21 @@ class TestPrayerTimesData:
 class TestIqamahTimesData:
     """Test IqamahTimesData validation and conversion."""
 
-    def test_valid_iqamah_times_pass_validation(
-        self, sample_iqamah_times: IqamahTimesData
-    ):
+    def test_valid_iqamah_times_pass_validation(self, sample_iqamah_times: IqamahTimesData):
         """Valid iqamah times should pass validation."""
         sample_iqamah_times.validate()
 
     def test_naive_iqamah_datetime_rejected(self):
         """Timezone-naive iqamah times should fail validation."""
-        base_date = date.today()
+        base_date = date(2026, 10, 20)
         data = IqamahTimesData(
-            fajr=datetime(
-                base_date.year, base_date.month, base_date.day, 5, 50
-            ),  # No timezone!
+            fajr=datetime(base_date.year, base_date.month, base_date.day, 5, 50),  # No timezone!
         )
 
         with pytest.raises(AssertionError, match="timezone-aware"):
             data.validate()
 
-    def test_to_dict_uses_correct_key_format(
-        self, sample_iqamah_times: IqamahTimesData
-    ):
+    def test_to_dict_uses_correct_key_format(self, sample_iqamah_times: IqamahTimesData):
         """to_dict should use iqamah_ prefix for keys."""
         result = sample_iqamah_times.to_dict()
 
@@ -254,7 +242,7 @@ class TestIqamahTimesData:
     def test_to_dict_omits_none_values(self):
         """to_dict should omit None values."""
         data = IqamahTimesData(
-            fajr=datetime(2024, 1, 1, 5, 50, tzinfo=timezone.utc),
+            fajr=datetime(2024, 1, 1, 5, 50, tzinfo=UTC),
             # Others are None
         )
         result = data.to_dict()

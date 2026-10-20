@@ -1,0 +1,45 @@
+[
+  {
+    "d_date": "2026-10-20",
+    "fajr_begins": "06:16:00",
+    "fajr_jamah": "06:45:00",
+    "sunrise": "07:56:00",
+    "zuhr_begins": "13:12:00",
+    "zuhr_jamah": "13:50:00",
+    "asr_mithl_1": "15:48:00",
+    "asr_mithl_2": "15:48:00",
+    "asr_jamah": "16:00:00",
+    "maghrib_begins": "18:23:00",
+    "maghrib_jamah": "18:28:00",
+    "isha_begins": "19:58:00",
+    "isha_jamah": "20:00:00",
+    "is_ramadan": "0",
+    "hijri_date": "0",
+    "jamah_changes": {
+      "maghrib_jamah": "18:26:00"
+    },
+    "tomorrow": {
+      "d_date": "2026-10-21",
+      "fajr_begins": "06:17:00",
+      "fajr_jamah": "06:45:00",
+      "sunrise": "07:58:00",
+      "zuhr_begins": "13:11:00",
+      "zuhr_jamah": "13:50:00",
+      "asr_mithl_1": "15:46:00",
+      "asr_mithl_2": "15:46:00",
+      "asr_jamah": "16:00:00",
+      "maghrib_begins": "18:21:00",
+      "maghrib_jamah": "18:26:00",
+      "isha_begins": "19:56:00",
+      "isha_jamah": "20:00:00",
+      "is_ramadan": "0",
+      "hijri_date": "0"
+    },
+    "hijri_date_convert": "9 Jumādā al-Ula 1448",
+    "jumuah": [],
+    "next_prayer": {
+      "prayerName": "isha",
+      "timeLeft": 32
+    }
+  }
+]

@@ -1,187 +1,152 @@
-"""Test cases for config entry migration."""
+"""Config entry migration from versions 1 (3.0.x) and 2 to version 3."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from __future__ import annotations
 
+import logging
+
+from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.muslim_prayer_companion import async_migrate_entry
+from custom_components.muslim_prayer_companion import migrate_options
 from custom_components.muslim_prayer_companion.const import (
     CONF_CALC_METHOD,
+    CONF_ENABLED_GROUPS,
+    CONF_FRIDAY_MOSQUES,
+    CONF_IQAMAH_METHOD,
+    CONF_IQAMAH_OFFSETS,
     CONF_LATITUDE,
     CONF_LOCATION_NAME,
     CONF_LONGITUDE,
     CONF_SOURCE_TYPE,
     CONF_TIMEZONE,
     CONFIG_VERSION,
-    DEFAULT_LOCATION_NAME,
+    DOMAIN,
+    GROUP_COUNTDOWN,
+    GROUP_HIJRI,
+    IQAMAH_METHOD_DISABLED,
+    IQAMAH_METHOD_MOSQUE,
+    IQAMAH_METHOD_OFFSET,
+    SENSOR_GROUPS,
     SOURCE_CALCULATED,
     SOURCE_IRELAND,
 )
 
-
-class TestConfigEntryMigration:
-    """Test config entry version migration."""
-
-    @pytest.fixture
-    def mock_hass(self) -> MagicMock:
-        """Create mock HomeAssistant."""
-        hass = MagicMock()
-        hass.config.latitude = 51.5074
-        hass.config.longitude = -0.1278
-        hass.config.time_zone = "Europe/London"
-        hass.config_entries = MagicMock()
-        return hass
-
-    @pytest.fixture
-    def v1_entry_calculated(self) -> MagicMock:
-        """Create a version 1 config entry with calculated method."""
-        entry = MagicMock()
-        entry.version = 1
-        entry.data = {
-            CONF_CALC_METHOD: "isna",
-        }
-        return entry
-
-    @pytest.fixture
-    def v1_entry_ireland(self) -> MagicMock:
-        """Create a version 1 config entry with Ireland method."""
-        entry = MagicMock()
-        entry.version = 1
-        entry.data = {
-            CONF_CALC_METHOD: "ie-icci",
-        }
-        return entry
-
-    @pytest.mark.asyncio
-    async def test_migrate_v1_to_v2_calculated(self, mock_hass, v1_entry_calculated):
-        """Migration should add location from HA config for calculated method."""
-        result = await async_migrate_entry(mock_hass, v1_entry_calculated)
-
-        assert result is True
-
-        # Check async_update_entry was called
-        mock_hass.config_entries.async_update_entry.assert_called_once()
-
-        call_kwargs = mock_hass.config_entries.async_update_entry.call_args[1]
-
-        # Verify new data includes location
-        new_data = call_kwargs["data"]
-        assert new_data[CONF_LATITUDE] == 51.5074
-        assert new_data[CONF_LONGITUDE] == -0.1278
-        assert new_data[CONF_LOCATION_NAME] == DEFAULT_LOCATION_NAME
-        assert new_data[CONF_SOURCE_TYPE] == SOURCE_CALCULATED
-        assert new_data[CONF_TIMEZONE] == "Europe/London"
-
-        # Verify version updated
-        assert call_kwargs["version"] == CONFIG_VERSION
-
-    @pytest.mark.asyncio
-    async def test_migrate_v1_to_v2_ireland(self, mock_hass, v1_entry_ireland):
-        """Migration should set SOURCE_IRELAND for Ireland methods."""
-        result = await async_migrate_entry(mock_hass, v1_entry_ireland)
-
-        assert result is True
-
-        call_kwargs = mock_hass.config_entries.async_update_entry.call_args[1]
-        new_data = call_kwargs["data"]
-
-        # Source type should be Ireland
-        assert new_data[CONF_SOURCE_TYPE] == SOURCE_IRELAND
-
-        # Original calc method preserved
-        assert new_data[CONF_CALC_METHOD] == "ie-icci"
-
-    @pytest.mark.asyncio
-    async def test_migrate_preserves_original_data(self, mock_hass):
-        """Migration should preserve all original data."""
-        entry = MagicMock()
-        entry.version = 1
-        entry.data = {
-            CONF_CALC_METHOD: "mwl",
-            "custom_option": "value",  # Some extra data
-        }
-
-        await async_migrate_entry(mock_hass, entry)
-
-        call_kwargs = mock_hass.config_entries.async_update_entry.call_args[1]
-        new_data = call_kwargs["data"]
-
-        # Original data preserved
-        assert new_data[CONF_CALC_METHOD] == "mwl"
-        assert new_data["custom_option"] == "value"
-
-    @pytest.mark.asyncio
-    async def test_no_migration_needed_for_current_version(self, mock_hass):
-        """No migration should happen for current version entries."""
-        entry = MagicMock()
-        entry.version = CONFIG_VERSION
-        entry.data = {
-            CONF_CALC_METHOD: "isna",
-            CONF_LATITUDE: 40.7128,
-            CONF_LONGITUDE: -74.0060,
-        }
-
-        result = await async_migrate_entry(mock_hass, entry)
-
-        assert result is True
-        # async_update_entry should not be called
-        mock_hass.config_entries.async_update_entry.assert_not_called()
+from .conftest import DUBLIN_LAT, DUBLIN_LON, FROZEN_NOW
 
 
-class TestBackwardCompatibility:
-    """Test backward compatibility of migrated entries."""
+def v1_entry(
+    data: dict, options: dict | None = None, title: str = "Muslim Prayer Companion"
+) -> MockConfigEntry:
+    return MockConfigEntry(domain=DOMAIN, version=1, title=title, data=data, options=options or {})
 
-    def test_sensor_unique_ids_unchanged_after_migration(self):
-        """Sensor unique_ids should remain unchanged after migration.
 
-        This is critical for preserving automations and dashboards.
-        """
-        # The unique_id format is: {key}_{entry_id}
-        # This format should not change between versions
+async def test_v1_ireland_entry(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
+    """A 3.0.x ICCI entry becomes a version 3 Irish entry with seeded options."""
+    freezer.move_to(FROZEN_NOW)
+    entry = v1_entry({CONF_CALC_METHOD: "ie-icci"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
 
-        entry_id = "test123"
-        sensor_key = "Fajr"
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.version == CONFIG_VERSION
+    assert entry.data[CONF_SOURCE_TYPE] == SOURCE_IRELAND
+    assert entry.data[CONF_CALC_METHOD] == "ie-icci"
+    # Version 1 had no coordinates: Home Assistant's are used, never overwritten later.
+    assert entry.data[CONF_LATITUDE] == DUBLIN_LAT
+    assert entry.data[CONF_LONGITUDE] == DUBLIN_LON
+    assert entry.data[CONF_TIMEZONE] == "Europe/Dublin"
+    assert entry.data[CONF_LOCATION_NAME] == "ICCI"
+    assert entry.unique_id == "ireland:ie-icci"
+    assert entry.options[CONF_IQAMAH_METHOD] == IQAMAH_METHOD_OFFSET
+    assert entry.options[CONF_FRIDAY_MOSQUES][0]["source"] == "manual"
+    assert entry.options[CONF_ENABLED_GROUPS] == list(SENSOR_GROUPS)
+    assert CONF_CALC_METHOD not in entry.options
 
-        # Pre-migration format
-        pre_migration_id = f"{sensor_key}_{entry_id}"
 
-        # Post-migration format (same)
-        post_migration_id = f"{sensor_key}_{entry_id}"
+async def test_v1_calculated_entry_honours_options_method(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """3.0.x read the method from options first, so that is what is migrated."""
+    freezer.move_to(FROZEN_NOW)
+    entry = v1_entry({CONF_CALC_METHOD: "isna"}, {CONF_CALC_METHOD: "mwl"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
 
-        assert pre_migration_id == post_migration_id
+    assert entry.data[CONF_SOURCE_TYPE] == SOURCE_CALCULATED
+    assert entry.data[CONF_CALC_METHOD] == "mwl"
+    assert entry.options[CONF_CALC_METHOD] == "mwl"
+    assert entry.data[CONF_LOCATION_NAME] == "Home"
+    assert entry.unique_id == f"calculated:{DUBLIN_LAT:.4f},{DUBLIN_LON:.4f}"
 
-    def test_ireland_method_values_unchanged(self):
-        """Ireland method string values should remain unchanged."""
-        # These values are stored in config entries and must not change
-        expected_values = ["ie-icci", "ie-mcnd", "ie-hicc", "ie-sdic"]
 
-        from custom_components.muslim_prayer_companion.const import IRELAND_CALC_METHODS
+async def test_duplicate_v1_entries_do_not_collide(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Two identical 3.0.x entries: the second keeps no unique id instead of colliding."""
+    freezer.move_to(FROZEN_NOW)
+    first = v1_entry({CONF_CALC_METHOD: "ie-icci"}, title="First")
+    second = v1_entry({CONF_CALC_METHOD: "ie-icci"}, title="Second")
+    first.add_to_hass(hass)
+    second.add_to_hass(hass)
+    with caplog.at_level(logging.WARNING):
+        # Setting up the component sets up every entry of the domain.
+        assert await hass.config_entries.async_setup(first.entry_id)
+        await hass.async_block_till_done()
+    assert second.state is ConfigEntryState.LOADED
+    assert first.unique_id == "ireland:ie-icci"
+    assert second.unique_id is None
+    assert second.version == CONFIG_VERSION
+    assert "duplicates" in caplog.text
 
-        for value in expected_values:
-            assert value in IRELAND_CALC_METHODS.values()
 
-    def test_standard_method_values_unchanged(self):
-        """Standard calculation method values should remain unchanged."""
-        expected_values = [
-            "isna",
-            "mwl",
-            "karachi",
-            "makkah",
-            "egypt",
-            "tehran",
-            "gulf",
-            "kuwait",
-            "qatar",
-            "singapore",
-            "france",
-            "turkey",
-            "russia",
-            "jafari",
-        ]
+async def test_newer_version_is_refused(hass: HomeAssistant) -> None:
+    """An entry from a newer release is not migrated downwards."""
+    entry = MockConfigEntry(domain=DOMAIN, version=CONFIG_VERSION + 1, data={})
+    entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.MIGRATION_ERROR
 
-        from custom_components.muslim_prayer_companion.const import (
-            STANDARD_CALC_METHODS,
-        )
 
-        for value in expected_values:
-            assert value in STANDARD_CALC_METHODS.values()
+def test_migrate_options_v2_toggles_and_iqamah() -> None:
+    """The never-applied enable_* toggles become groups; iqamah settings carry over."""
+    data = {
+        CONF_SOURCE_TYPE: SOURCE_IRELAND,
+        CONF_CALC_METHOD: "ie-hicc",
+        CONF_LATITUDE: 1.0,
+        CONF_LONGITUDE: 2.0,
+    }
+    options = {
+        "enable_hijri": False,
+        "enable_countdown": True,
+        CONF_IQAMAH_METHOD: IQAMAH_METHOD_OFFSET,
+        CONF_IQAMAH_OFFSETS: {"Fajr": 25, "Dhuhr": "bad"},
+        "future_key": 1,
+    }
+    new_data, new_options = migrate_options(data, options)
+    assert new_data[CONF_CALC_METHOD] == "ie-hicc"
+    assert new_data[CONF_LATITUDE] == 1.0
+    assert GROUP_HIJRI not in new_options[CONF_ENABLED_GROUPS]
+    assert GROUP_COUNTDOWN in new_options[CONF_ENABLED_GROUPS]
+    # HICC publishes jamah times: the mosque default wins over the old 'offset'.
+    assert new_options[CONF_IQAMAH_METHOD] == IQAMAH_METHOD_MOSQUE
+    assert new_options[CONF_IQAMAH_OFFSETS]["Fajr"] == 25
+    assert new_options[CONF_IQAMAH_OFFSETS]["Dhuhr"] == 15
+    assert new_options["future_key"] == 1
+    assert new_options[CONF_FRIDAY_MOSQUES][0]["source"] == "ie-hicc"
+    assert "enable_hijri" not in new_options
+
+
+def test_migrate_options_keeps_disabled_iqamah_and_unknown_method() -> None:
+    """Disabled stays disabled; an unknown method falls back to ISNA."""
+    data, options = migrate_options(
+        {CONF_CALC_METHOD: "weird"}, {CONF_IQAMAH_METHOD: IQAMAH_METHOD_DISABLED}
+    )
+    assert data[CONF_SOURCE_TYPE] == SOURCE_CALCULATED
+    assert data[CONF_CALC_METHOD] == "isna"
+    assert options[CONF_CALC_METHOD] == "isna"
+    assert options[CONF_IQAMAH_METHOD] == IQAMAH_METHOD_DISABLED
